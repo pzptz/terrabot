@@ -1,0 +1,5 @@
+2025-03-10 16:26:09,894:WARNING:discord.client: PyNaCl is not installed, voice will NOT be supported
+2025-03-10 16:26:09,952:INFO:discord.client: logging in using static token
+2025-03-10 16:26:10,967:INFO:discord.gateway: Shard ID None has connected to Gateway (Session ID: 627f52b9c7150c7599c11c20f3eb7e9d).
+2025-03-10 16:26:12,988:INFO:discord: terrabot#4972 has connected to Discord!
+2025-03-10 16:26:22,621:INFO:discord: Processing recommendation request from quenchthethirsty: Places to visit in Toronto that I can reach by subway or bus
