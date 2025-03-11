@@ -18,6 +18,7 @@ A Discord bot that recommends activities near a given location that are accessib
 
 ## Demo Video
 
+coming soon ...
 
 ## Setup Instructions
 
