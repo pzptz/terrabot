@@ -1,93 +1,125 @@
-Transit-Accessible Activity Recommendation Bot
+
+# Transit-Accessible Activity Recommendation Bot
+
 A Discord bot that recommends activities near a given location that are accessible by public transit. The bot leverages Mistral AI for natural language processing, OpenStreetMap APIs for location and transit data, and OpenWeatherMap for current weather conditions.
-Features
 
-🗺️ Recommends activities based on user's location
-🚆 Ensures recommendations are accessible by public transit
-🌦️ Considers current weather and season
-🤖 Natural language interface (ask in plain English)
-⌨️ Command-based interface (!activities)
-💰 Uses FREE APIs (no Google Maps required!)
+---
 
-Setup Instructions
-Prerequisites
+## Features
 
-Python 3.8+
-Discord Bot Token (from Discord Developer Portal)
-Mistral AI API Key (from Mistral AI Platform)
-OpenRouteService API Key (free from OpenRouteService)
-OpenWeatherMap API Key (free tier from OpenWeatherMap)
+✅ **Smart Activity Recommendations** – Get suggestions for activities based on your location  
+🚆 **Public Transit Accessibility** – Ensures recommendations are reachable via transit  
+🌦 **Weather-Aware** – Adjusts recommendations based on current weather and season  
+🤖 **Natural Language Understanding** – Ask for suggestions in plain English  
+⌨ **Command-Based Interaction** – Use `!activities` for structured queries  
+💰 **100% Free & Open-Source** – No need for Google Maps or paid APIs  
 
-Installation
+---
 
-Clone this repository
-Install dependencies:
-Copypip install -r requirements.txt
+## Setup Instructions
 
-Create a .env file with your API keys (use .env.example as a template)
-Run the bot:
-Copypython bot.py
+### Prerequisites
 
+Ensure you have the following before installation:
 
-Discord Setup
+- **Python 3.8+**
+- **Discord Bot Token** (from [Discord Developer Portal](https://discord.com/developers/applications))
+- **Mistral AI API Key** (from [Mistral AI Platform](https://mistral.ai/))
+- **OpenRouteService API Key** (free from [OpenRouteService](https://openrouteservice.org/))
+- **OpenWeatherMap API Key** (free tier from [OpenWeatherMap](https://openweathermap.org/))
 
-Create a bot on the Discord Developer Portal
-Enable "Message Content Intent" in the Bot section
-Add the bot to your server using the OAuth2 URL generator with the following scopes:
+### Installation
 
-bot
-applications.commands
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/your-repo-name.git
+   cd your-repo-name
+   
+2. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
 
+3. **Setup API Keys:**
+- Create a .env file with your API keys (use .env.example as a template)
 
-Give the bot permissions:
-
-Read Messages/View Channels
-Send Messages
-Use External Emojis
-Add Reactions
+4. **Run the bot:**
+   ```bash
+   python bot.py
 
 
+### Discord Bot Setup
 
-Usage
-Natural Language
-Just ask the bot for recommendations in a natural way:
+#### 1. Create Discord Bot  
+- Go to the [Discord Developer Portal](https://discord.com/developers/applications)  
+- Create a new bot and **enable "Message Content Intent"** in the **Bot** section  
 
-"What can I do in Seattle?"
-"Recommend activities near Chicago"
-"What should I explore in Boston?"
+#### 2. Add Bot to Your Server  
+- Use the **OAuth2 URL generator** and select the following scopes:  
+  - `bot`  
+  - `applications.commands`  
 
-Commands
+#### 3. Required Permissions  
+Give the bot permissions:  
+- **Read Messages/View Channels**  
+- **Send Messages**  
+- **Use External Emojis**  
+- **Add Reactions**  
 
-!activities [location] - Get activity recommendations for a specific location
+---
 
-Example: !activities New York City
+## Usage  
 
+### Natural Language Queries   
+Just ask the bot for activity recommendations in a natural conversational way:
 
-!help_transit - Show detailed help information
+> "What can I do in Seattle?"
 
-Technology Stack
+> "Recommend activities near Chicago"
 
-Discord.py: Bot framework for Discord integration
-Mistral AI: Large language model for generating recommendations
-OpenStreetMap:
+> "What should I explore in Boston?"
+
+### Commands  
+- `!activities [location]` – Get activity recommendations for a specific location  
+  - Example: `!activities New York City`  
+- `!help_transit` – show detailed help information  
+
+---
+
+## Technology Stack  
+
+| Component | Purpose |  
+|-----------|---------|  
+| **Discord.py** | Bot framework for Discord integration |  
+| **Mistral AI** | Large language model for generating recommendations |  
+| **OpenStreetMap (OSM)** | Location data & transit accessibility |  
+| **OpenRouteService** | Public transit routing information |  
+| **OpenWeatherMap API** | Real time weather data |  
+| **GeoPy** | Geocoding & reverse geocoding library|  
+
 
 Nominatim API: Geocoding (location to coordinates)
 Overpass API: Finding points of interest
 
 
-OpenRouteService: Public transit routing information
-OpenWeatherMap API: Current weather data
-GeoPy: Geocoding and reverse geocoding library
+---
 
-Advantages of the Open-Source Approach
+## Advantages of the Open-Source Approach 
 
-Completely free: No billing setup or credit card required
-No API quotas: The OpenStreetMap ecosystem doesn't require API keys for basic usage
-Global coverage: Often better coverage in regions outside the US
-Community-maintained data: Frequently updated by local contributors
+- **Completely Free** – No billing setup or credit card required  
+- **No API Quotas** – The OpenStreetMap ecosystem doesn't require API keys for basic usage
+- **Global Coverage** – Often better coverage in regions outside the US 
+- **Community-Maintained Data** – Frequently updated by local contributors 
 
-Limitations
+---
 
-Transit routing information may be limited in some regions
-API response times may be slower than commercial alternatives
-Weather data might not be available for all locations
+## Limitations  
+
+- Transit routing information may be limited in some regions
+- API response times may be slower than commercial alternatives
+- Weather data might not be available for all locations
+
+---
+
+## License  
+
+This project is open-source and available under the **MIT License**.  
