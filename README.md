@@ -1,5 +1,5 @@
 
-# Transit-Accessible Activity Recommendation Bot
+# Transit-Accessible Activity Recommendation Agent
 
 A Discord bot that recommends activities near a given location that are accessible by public transit. The bot leverages Mistral AI for natural language processing, OpenStreetMap APIs for location and transit data, and OpenWeatherMap for current weather conditions.
 
@@ -15,6 +15,9 @@ A Discord bot that recommends activities near a given location that are accessib
 💰 **100% Free & Open-Source** – No need for Google Maps or paid APIs  
 
 ---
+
+## Demo Video
+
 
 ## Setup Instructions
 
@@ -95,10 +98,8 @@ Just ask the bot for activity recommendations in a natural conversational way:
 | **OpenRouteService** | Public transit routing information |  
 | **OpenWeatherMap API** | Real time weather data |  
 | **GeoPy** | Geocoding & reverse geocoding library|  
-
-
-Nominatim API: Geocoding (location to coordinates)
-Overpass API: Finding points of interest
+| **Nominatim API** | Geocoding (location to coordinates)|  
+| **Overpass API** | Finding points of interest|  
 
 
 ---
