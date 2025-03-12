@@ -390,14 +390,14 @@ async def help_transit(ctx):
             '- "What should I explore in Boston?"\n\n'
             '- "Bookmark Central Park"\n'
             '- "Show my bookmarks"\n'
-            '- "Delete bookmark A"\n\n'
+            '- "Delete bookmark 1"\n\n'
             "**2. Use the command:**\n"
             "- `!activities [location]`\n"
             "Example: `!activities New York City`\n"
             "- `!add [location]`\n"
             "Example: `!add New York City`\n"
             "- `!delete [bookmark number]`\n"
-            "Example: `!delete 1`\n"
+            "Example: `!delete 1`\n\n"
         ),
         inline=False,
     )
