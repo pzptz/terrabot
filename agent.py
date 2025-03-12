@@ -34,8 +34,6 @@ If the user prompt includes anything about clearing the bookmark list, redirect 
 
 Words like collection, database, and list should be treated as the same thing as bookmark, meaning reference to these words should redirect to the appropriate bookmark command.
 
-After generating a list of activities at a certain place and before generating the bookmark buttons, ask the user if they're interested in any of the activities and tell them feel free to bookmark any of them using the buttons below.
-
 Only respond with recommendations based on the information provided. Keep responses concise and practical."""
 
 
@@ -629,6 +627,9 @@ class ActivityRecommendationAgent:
         """Process the message and return activity recommendations."""
         content = message.content
         user_id = message.author.id
+        
+        # Clear previous recommendations for this user
+        self.last_recommendations[str(user_id)] = []
 
         # Store this message in the conversation history
         self.conversation_manager.add_message(user_id, "user", content)
@@ -637,22 +638,19 @@ class ActivityRecommendationAgent:
         place_type, is_name_question = self.extract_place_type(content)
 
         if is_name_question:
-            response = "My name is TerraBot! I'm a Discord bot that helps you find activities accessible by public transit. How can I assist you today?"
+            response = "My name is TerraBot! I'm a Discord bot that helps users find activities accessible by public transit. How can I assist you today?"
             self.conversation_manager.add_message(user_id, "assistant", response)
-            return response
+            return response, None  # No view since there are no recommendations
 
         # Extract location information
         origin_location = self.extract_origin_location(content)
-
         destination_location = self.extract_destination_location(content)
-        print("origin: ", origin_location)
-        print("dest: ", destination_location)
         
         # If we don't have any location at all, ask for origin first
         if not origin_location and not destination_location:
             response = "To help you find activities accessible by public transit, I need to know your starting location. Where will you be traveling from?"
             self.conversation_manager.add_message(user_id, "assistant", response)
-            return response
+            return response, None
         
         # If we have an origin but no destination, use the origin as the destination area to explore
         if origin_location and not destination_location:
@@ -661,21 +659,18 @@ class ActivityRecommendationAgent:
         if not origin_location and destination_location:
             response = "To help you find activities accessible by public transit, I need to know your starting location. Where will you be traveling from?"
             self.conversation_manager.add_message(user_id, "assistant", response)
-            return response
+            return response, None
         
         # Get coordinates for both locations
         origin_coords = None
         if origin_location:
             origin_coords = await self.get_coordinates(origin_location)
-            print("origin coords: ", origin_coords)
             if not origin_coords:
-                return f"Sorry, I couldn't find the location '{origin_location}'. Please try a different location."
+                return f"Sorry, I couldn't find the location '{origin_location}'. Please try a different location.", None
         
         dest_coords = await self.get_coordinates(destination_location)
-        print("dest coords: ", dest_coords)
         if not dest_coords:
-            return f"Sorry, I couldn't find the location '{destination_location}'. Please try a different location."
-        
+            return f"Sorry, I couldn't find the location '{destination_location}'. Please try a different location.", None
         
         # Get weather at destination
         weather = await self.get_weather(dest_coords["lat"], dest_coords["lng"])
@@ -703,7 +698,6 @@ class ActivityRecommendationAgent:
                 )
 
             if transit_info["available"]:
-
                 # Add score for places that are 30-60 minutes away by transit
                 transit_score = 1.0
                 if "duration" in transit_info:
@@ -714,15 +708,15 @@ class ActivityRecommendationAgent:
                         if 25 <= duration_minutes <= 45:
                             transit_score = 2.0  # Best transit time range
                 
-                transit_accessible_places.append(
-                    {
-                        "name": place["name"],
-                        "address": place.get("address", "Check maps for exact location"),
-                        "types": place.get("types", []),
-                        "transit_info": transit_info,
-                        "transit_score": transit_score
-                    }
-                )
+                place_info = {
+                    "name": place["name"],
+                    "address": place.get("address", "Check maps for exact location"),
+                    "types": place.get("types", []),
+                    "transit_info": transit_info,
+                    "transit_score": transit_score
+                }
+                
+                transit_accessible_places.append(place_info)
         
         # Sort places by transit score to prioritize better transit options
         transit_accessible_places = sorted(
@@ -731,11 +725,13 @@ class ActivityRecommendationAgent:
             reverse=True
         )
 
-        # Continue with existing code...
-        current_season = self.get_current_season()
-        current_time = datetime.now().strftime("%A, %I:%M %p")
+        # Limit to 5 places for recommendations - this is key to match button count with recommendations
+        transit_accessible_places = transit_accessible_places[:5]
 
         # Prepare context variables for string formatting
+        current_season = self.get_current_season()
+        current_time = datetime.now().strftime("%A, %I:%M %p")
+        
         context = {
             "origin": origin_coords["formatted_address"] if origin_coords else None,
             "destination": dest_coords["formatted_address"],
@@ -759,7 +755,7 @@ class ActivityRecommendationAgent:
         Location details:
         {origin_details}
         - Destination area: {context['destination']}
-        - Current  time: {context['current_time']}
+        - Current time: {context['current_time']}
         - Season: {context['season']}
         
         Weather information:
@@ -772,7 +768,9 @@ class ActivityRecommendationAgent:
         
         Please prioritize recommendations that are 30-60 minutes away by public transit, as these offer a good balance of accessibility and exploration.
         
-        Please provide 3-5 specific recommendations based on this data. If no transit-accessible places were found, suggest popular activities in the area that might have public transit access not listed in the data.
+        Please provide {len(transit_accessible_places)} specific recommendations based on this data. Make sure to mention ALL of the places in the "Places accessible by public transit" list above.
+        
+        If no transit-accessible places were found, suggest popular activities in the area that might have public transit access not listed in the data.
         """
                 
         # Get all conversation history for context
@@ -809,6 +807,9 @@ class ActivityRecommendationAgent:
 
             # Store the bot's response in conversation history
             self.conversation_manager.add_message(user_id, "assistant", final_response)
+            
+            # Store recommendations for this user to retrieve when buttons are clicked
+            self.last_recommendations[str(user_id)] = transit_accessible_places
             
             # Create a view with bookmark buttons for each recommendation
             view = None
