@@ -532,35 +532,74 @@ class ActivityRecommendationAgent:
 
         return None, False  # No specific place type found
 
-    async def run(self, message: discord.Message):
-        """Process the message and return activity recommendations."""
-        content = message.content
-        user_id = message.author.id
+    def extract_origin_location(self, content):
+        """Extract origin location from message content"""
+        content_lower = content.lower()
         
-        # Clear previous recommendations for this user
-        self.last_recommendations[str(user_id)] = []
-
-        # Store this message in the conversation history
-        self.conversation_manager.add_message(user_id, "user", content)
-
-        # Check if it's a bot identification question
-        place_type, is_name_question = self.extract_place_type(content)
-
-        if is_name_question:
-            response = "My name is TerraBot! I'm a Discord bot that helps you find activities accessible by public transit. How can I assist you today?"
-            self.conversation_manager.add_message(user_id, "assistant", response)
-            return response, None  # No view since there are no recommendations
-
-        location_keywords = ["in ", "near ", "around "]
-        location = None
-
-        for keyword in location_keywords:
-            if keyword in content.lower():
-                parts = content.lower().split(keyword, 1)
+        # Check for common starting point phrases
+        origin_keywords = ["from ", "starting from ", "leaving from ", "departing from ", "my location is ", "i'm at ", "i am at ", "starting point is "]
+        
+        for keyword in origin_keywords:
+            if keyword in content_lower:
+                parts = content_lower.split(keyword, 1)
                 if len(parts) > 1:
                     raw_location = parts[1].strip()
+                    
+                    # Look for end markers
+                    cutoff_phrases = [
+                        " to ",
+                        " and ",
+                        " heading ",
+                        " going ",
+                        ". ",
+                        ", ",
+                    ]
 
-                    location = raw_location
+                    for phrase in cutoff_phrases:
+                        if phrase in raw_location:
+                            raw_location = raw_location.split(phrase, 1)[0].strip()
+                    
+                    return raw_location
+        
+        # Check if we can find a more general origin hint
+        # This would handle cases like "activities in NYC from Boston"
+        if " from " in content_lower and (" in " in content_lower or " near " in content_lower):
+            # This is a complex case where we have both destination and origin
+            # First get everything after "from"
+            parts = content_lower.split(" from ", 1)
+            if len(parts) > 1:
+                origin_part = parts[1].strip()
+                
+                # Look for end markers
+                cutoff_phrases = [
+                    " to ",
+                    " and ",
+                    " heading ",
+                    " going ",
+                    ". ",
+                    ", ",
+                ]
+
+                for phrase in cutoff_phrases:
+                    if phrase in origin_part:
+                        origin_part = origin_part.split(phrase, 1)[0].strip()
+                
+                return origin_part
+        
+        return None
+
+    def extract_destination_location(self, content):
+        """Extract destination location from message content"""
+        content_lower = content.lower()
+        
+        # Use existing location extraction logic from the code
+        location_keywords = ["in ", "near ", "around "]
+        
+        for keyword in location_keywords:
+            if keyword in content_lower:
+                parts = content_lower.split(keyword, 1)
+                if len(parts) > 1:
+                    raw_location = parts[1].strip()
 
                     cutoff_phrases = [
                         " that",
@@ -575,110 +614,167 @@ class ActivityRecommendationAgent:
                         " when",
                         " for",
                         " and",
+                        " from",
                     ]
 
                     for phrase in cutoff_phrases:
-                        if phrase in location:
-                            location = location.split(phrase, 1)[0].strip()
+                        if phrase in raw_location:
+                            raw_location = raw_location.split(phrase, 1)[0].strip()
+                    
+                    return raw_location
+                    
+        return None
 
-                    break
+    async def run(self, message: discord.Message):
+        """Process the message and return activity recommendations."""
+        content = message.content
+        user_id = message.author.id
 
-        if not location:
-            # Get the conversation history
-            conversation_history = self.conversation_manager.get_history(user_id)
+        # Store this message in the conversation history
+        self.conversation_manager.add_message(user_id, "user", content)
 
-            # Prepare messages for Mistral including history
-            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        # Check if it's a bot identification question
+        place_type, is_name_question = self.extract_place_type(content)
 
-            # Add relevant conversation history (skipping the latest user message which we'll add separately)
-            for msg in conversation_history[:-1]:
-                messages.append(msg)
+        if is_name_question:
+            response = "My name is TerraBot! I'm a Discord bot that helps you find activities accessible by public transit. How can I assist you today?"
+            self.conversation_manager.add_message(user_id, "assistant", response)
+            return response
 
-            # Add the latest user message
-            messages.append({"role": "user", "content": content})
+        # Extract location information
+        origin_location = self.extract_origin_location(content)
 
-            response = await self.mistral_client.chat.complete_async(
-                model=MISTRAL_MODEL,
-                messages=messages,
-            )
+        destination_location = self.extract_destination_location(content)
+        print("origin: ", origin_location)
+        print("dest: ", destination_location)
+        
+        # If we don't have any location at all, ask for origin first
+        if not origin_location and not destination_location:
+            response = "To help you find activities accessible by public transit, I need to know your starting location. Where will you be traveling from?"
+            self.conversation_manager.add_message(user_id, "assistant", response)
+            return response
+        
+        # If we have an origin but no destination, use the origin as the destination area to explore
+        if origin_location and not destination_location:
+            destination_location = origin_location
 
-            mistral_response = response.choices[0].message.content
-            self.conversation_manager.add_message(
-                user_id, "assistant", mistral_response
-            )
-            return mistral_response, None  # No view since there are no recommendations
-
-        # Get coordinates for the location
-        coords = await self.get_coordinates(location)
-        if not coords:
-            return f"Sorry, I couldn't find the location '{location}'. Please try a different location.", None
-
-        weather = await self.get_weather(coords["lat"], coords["lng"])
+        if not origin_location and destination_location:
+            response = "To help you find activities accessible by public transit, I need to know your starting location. Where will you be traveling from?"
+            self.conversation_manager.add_message(user_id, "assistant", response)
+            return response
+        
+        # Get coordinates for both locations
+        origin_coords = None
+        if origin_location:
+            origin_coords = await self.get_coordinates(origin_location)
+            print("origin coords: ", origin_coords)
+            if not origin_coords:
+                return f"Sorry, I couldn't find the location '{origin_location}'. Please try a different location."
+        
+        dest_coords = await self.get_coordinates(destination_location)
+        print("dest coords: ", dest_coords)
+        if not dest_coords:
+            return f"Sorry, I couldn't find the location '{destination_location}'. Please try a different location."
+        
+        
+        # Get weather at destination
+        weather = await self.get_weather(dest_coords["lat"], dest_coords["lng"])
 
         # Get nearby places of interest, filtered by place type if specified
         places = await self.get_nearby_places(
-            coords["lat"], coords["lng"], place_type=place_type
+            dest_coords["lat"], dest_coords["lng"], place_type=place_type
         )
 
-        # Filter places that are accessible by public transit
+        # Filter places that are accessible by public transit from origin
         transit_accessible_places = []
-        for place in places[:5]:
+        for place in places[:10]:  # Check more places to get better options
             place_lat = place["lat"]
             place_lng = place["lng"]
 
-            transit_info = await self.get_transit_info(
-                coords["lat"], coords["lng"], place_lat, place_lng
-            )
+            # If we have an origin, calculate transit from origin to place
+            if origin_coords:
+                transit_info = await self.get_transit_info(
+                    origin_coords["lat"], origin_coords["lng"], place_lat, place_lng
+                )
+            else:
+                # Use destination as origin if no specific origin provided (for exploring an area)
+                transit_info = await self.get_transit_info(
+                    dest_coords["lat"], dest_coords["lng"], place_lat, place_lng
+                )
 
             if transit_info["available"]:
-                place_info = {
-                    "name": place["name"],
-                    "address": place.get(
-                        "address", "Check maps for exact location"
-                    ),
-                    "types": place.get("types", []),
-                    "transit_info": transit_info,
-                }
-                transit_accessible_places.append(place_info)
-                
-                # Store each place in the last_recommendations dictionary for this user
-                if str(user_id) not in self.last_recommendations:
-                    self.last_recommendations[str(user_id)] = []
-                self.last_recommendations[str(user_id)].append(place_info)
 
+                # Add score for places that are 30-60 minutes away by transit
+                transit_score = 1.0
+                if "duration" in transit_info:
+                    duration_minutes = transit_info["duration"]
+                    # Prioritize places 30-60 minutes away with higher scores
+                    if 20 <= duration_minutes <= 60:
+                        transit_score = 1.5
+                        if 25 <= duration_minutes <= 45:
+                            transit_score = 2.0  # Best transit time range
+                
+                transit_accessible_places.append(
+                    {
+                        "name": place["name"],
+                        "address": place.get("address", "Check maps for exact location"),
+                        "types": place.get("types", []),
+                        "transit_info": transit_info,
+                        "transit_score": transit_score
+                    }
+                )
+        
+        # Sort places by transit score to prioritize better transit options
+        transit_accessible_places = sorted(
+            transit_accessible_places, 
+            key=lambda x: x.get("transit_score", 0), 
+            reverse=True
+        )
+
+        # Continue with existing code...
         current_season = self.get_current_season()
         current_time = datetime.now().strftime("%A, %I:%M %p")
 
+        # Prepare context variables for string formatting
         context = {
-            "location": coords["formatted_address"],
+            "origin": origin_coords["formatted_address"] if origin_coords else None,
+            "destination": dest_coords["formatted_address"],
             "weather": weather if weather else "Unknown",
             "season": current_season,
             "current_time": current_time,
             "transit_accessible_places": transit_accessible_places,
         }
 
-        # Format a prompt for Mistral
+        # Prepare string formatting variables to avoid undefined variable issues
         place_type_text = f" focusing on {place_type} options" if place_type else ""
-
+        origin_text = f"from {context['origin']}" if context['origin'] else ""
+        origin_details = f"- Origin: {context['origin']}" if context['origin'] else "- No specific origin provided"
+        weather_info = json.dumps(context['weather'], indent=2) if weather else "Weather information unavailable"
+        places_info = json.dumps(transit_accessible_places, indent=2) if transit_accessible_places else "No places with public transit access found"
+        
+        # Format a prompt for Mistral
         user_prompt = f"""
-        I need recommendations for activities near {location}{place_type_text} that are accessible by public transit.
+        I need recommendations for activities near {destination_location}{place_type_text} that are accessible by public transit {origin_text}.
         
         Location details:
-        - Full address: {context['location']}
-        - Current time: {context['current_time']}
+        {origin_details}
+        - Destination area: {context['destination']}
+        - Current  time: {context['current_time']}
         - Season: {context['season']}
         
         Weather information:
-        {json.dumps(context['weather'], indent=2) if weather else "Weather information unavailable"}
+        {weather_info}
         
         Places accessible by public transit:
-        {json.dumps(context['transit_accessible_places'], indent=2) if transit_accessible_places else "No places with public transit access found"}
+        {places_info}
         
         Consider the conversation history when making recommendations. The user might have mentioned preferences or constraints in previous messages.
         
+        Please prioritize recommendations that are 30-60 minutes away by public transit, as these offer a good balance of accessibility and exploration.
+        
         Please provide 3-5 specific recommendations based on this data. If no transit-accessible places were found, suggest popular activities in the area that might have public transit access not listed in the data.
         """
-
+                
         # Get all conversation history for context
         conversation_history = self.conversation_manager.get_history(user_id)
 
@@ -702,9 +798,9 @@ class ActivityRecommendationAgent:
 
             # Format the title according to whether we have a specific place type
             if place_type:
-                title = f"**{place_type.title()} options near {location} accessible by public transit:**"
+                title = f"**{place_type.title()} options near {destination_location} accessible by public transit:**"
             else:
-                title = f"**Activities near {location} accessible by public transit:**"
+                title = f"**Activities near {destination_location} accessible by public transit:**"
 
             final_response = f"{title}\n\n{recommendations}"
 
@@ -726,7 +822,7 @@ class ActivityRecommendationAgent:
             return final_response, view
         except Exception as e:
             print(f"Error getting recommendations from Mistral: {e}")
-            error_message = f"I had trouble generating recommendations for {location}. Please try again later."
+            error_message = f"I had trouble generating recommendations for {destination_location}. Please try again later."
             self.conversation_manager.add_message(user_id, "assistant", error_message)
             return error_message, None  # No view due to error
 
