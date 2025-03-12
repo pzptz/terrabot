@@ -80,8 +80,15 @@ async def on_interaction(interaction):
         custom_id = interaction.data.get("custom_id", "")
 
         if custom_id.startswith("bookmark_"):
-            # Extract place name from custom_id
-            place_name = custom_id[9:]  # Remove "bookmark_" prefix
+            # Extract place name from custom_id by removing "bookmark_" prefix and any suffix
+            # The format is "bookmark_PLACENAME_INDEX"
+            parts = custom_id[9:].split("_")
+            if len(parts) > 1:
+                # Remove the index (last part) to get the place name
+                place_name = "_".join(parts[:-1])
+            else:
+                # For backward compatibility with old format
+                place_name = parts[0]
 
             # Get place details from the agent's last recommendations
             place_info = agent.get_place_by_name(interaction.user.id, place_name)
@@ -135,6 +142,11 @@ async def on_interaction(interaction):
                     "Sorry, I couldn't find details for this place anymore. Try asking for recommendations again.",
                     ephemeral=True,
                 )
+
+        # No changes needed for delete_bookmark functionality
+        elif custom_id.startswith("delete_bookmark_"):
+            # ... rest of the handler remains the same
+            pass
 
         elif custom_id.startswith("delete_bookmark_"):
             # Extract bookmark ID from custom_id

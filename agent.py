@@ -3,6 +3,8 @@ import json
 import requests
 from mistralai import Mistral
 import discord
+import aiohttp
+import asyncio
 from geopy.geocoders import Nominatim
 from datetime import datetime
 from discord.ui import Button, View
@@ -73,12 +75,30 @@ class ConversationManager:
 
 
 class BookmarkButton(discord.ui.Button):
-    def __init__(self, place_name, place_details):
-        """Initialize a button to bookmark a place."""
+    def __init__(self, place_name, place_details, index=0):
+        """Initialize a button to bookmark a place.
+
+        Args:
+            place_name: Name of the place
+            place_details: Dictionary containing place details
+            index: Index to make the custom_id unique
+        """
+        # Create a unique custom_id by appending an index or timestamp
+        unique_id = f"bookmark_{place_name}_{index}"
+
+        # Make sure the custom_id is not too long (Discord has a 100-character limit)
+        if len(unique_id) > 95:
+            # Truncate the place name if needed
+            unique_id = f"bookmark_{place_name[:80]}_{index}"
+
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label=f"Bookmark {place_name}",
-            custom_id=f"bookmark_{place_name}",
+            label=(
+                f"Bookmark {place_name[:20]}"
+                if len(place_name) > 20
+                else f"Bookmark {place_name}"
+            ),
+            custom_id=unique_id,
         )
         self.place_name = place_name
         self.place_details = place_details
@@ -147,7 +167,12 @@ class ActivityRecommendationAgent:
     async def get_coordinates(self, location_name):
         """Convert a location name to coordinates using OpenStreetMap/Nominatim."""
         try:
-            location = self.geolocator.geocode(location_name)
+            # Create a thread executor to run the blocking geocode operation
+            loop = asyncio.get_event_loop()
+            location = await loop.run_in_executor(
+                None, lambda: self.geolocator.geocode(location_name)
+            )
+
             if location:
                 return {
                     "lat": location.latitude,
@@ -163,17 +188,18 @@ class ActivityRecommendationAgent:
         """Get current weather for the coordinates."""
         try:
             url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lng}&units=metric&appid={self.openweather_api_key}"
-            response = requests.get(url)
-            data = response.json()
 
-            if response.status_code == 200:
-                return {
-                    "description": data["weather"][0]["description"],
-                    "temperature": data["main"]["temp"],
-                    "feels_like": data["main"]["feels_like"],
-                    "humidity": data["main"]["humidity"],
-                }
-            return None
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return {
+                            "description": data["weather"][0]["description"],
+                            "temperature": data["main"]["temp"],
+                            "feels_like": data["main"]["feels_like"],
+                            "humidity": data["main"]["humidity"],
+                        }
+                    return None
         except Exception as e:
             print(f"Error getting weather: {e}")
             return None
@@ -301,101 +327,103 @@ class ActivityRecommendationAgent:
                 # If no specific types are matched, use the default query
                 if not query_parts:
                     query = f"""
-                   [out:json];
-                   (
-                     node["tourism"](around:{radius},{lat},{lng});
-                     node["leisure"="park"](around:{radius},{lat},{lng});
-                     node["amenity"="restaurant"](around:{radius},{lat},{lng});
-                     node["amenity"="cafe"](around:{radius},{lat},{lng});
-                     node["amenity"="theatre"](around:{radius},{lat},{lng});
-                     node["amenity"="cinema"](around:{radius},{lat},{lng});
-                     node["amenity"="arts_centre"](around:{radius},{lat},{lng});
-                     node["shop"="mall"](around:{radius},{lat},{lng});
-                     way["tourism"](around:{radius},{lat},{lng});
-                     way["leisure"="park"](around:{radius},{lat},{lng});
-                     relation["tourism"](around:{radius},{lat},{lng});
-                     relation["leisure"="park"](around:{radius},{lat},{lng});
-                   );
-                   out center;
-                   """
+                [out:json];
+                (
+                    node["tourism"](around:{radius},{lat},{lng});
+                    node["leisure"="park"](around:{radius},{lat},{lng});
+                    node["amenity"="restaurant"](around:{radius},{lat},{lng});
+                    node["amenity"="cafe"](around:{radius},{lat},{lng});
+                    node["amenity"="theatre"](around:{radius},{lat},{lng});
+                    node["amenity"="cinema"](around:{radius},{lat},{lng});
+                    node["amenity"="arts_centre"](around:{radius},{lat},{lng});
+                    node["shop"="mall"](around:{radius},{lat},{lng});
+                    way["tourism"](around:{radius},{lat},{lng});
+                    way["leisure"="park"](around:{radius},{lat},{lng});
+                    relation["tourism"](around:{radius},{lat},{lng});
+                    relation["leisure"="park"](around:{radius},{lat},{lng});
+                );
+                out center;
+                """
                 else:
                     query = f"""
-                   [out:json];
-                   (
-                     {' '.join(query_parts)}
-                   );
-                   out center;
-                   """
+                [out:json];
+                (
+                    {' '.join(query_parts)}
+                );
+                out center;
+                """
             else:
                 # Default query with all types
                 query = f"""
-               [out:json];
-               (
-                 node["tourism"](around:{radius},{lat},{lng});
-                 node["leisure"="park"](around:{radius},{lat},{lng});
-                 node["amenity"="restaurant"](around:{radius},{lat},{lng});
-                 node["amenity"="cafe"](around:{radius},{lat},{lng});
-                 node["amenity"="theatre"](around:{radius},{lat},{lng});
-                 node["amenity"="cinema"](around:{radius},{lat},{lng});
-                 node["amenity"="arts_centre"](around:{radius},{lat},{lng});
-                 node["shop"="mall"](around:{radius},{lat},{lng});
-                 way["tourism"](around:{radius},{lat},{lng});
-                 way["leisure"="park"](around:{radius},{lat},{lng});
-                 relation["tourism"](around:{radius},{lat},{lng});
-                 relation["leisure"="park"](around:{radius},{lat},{lng});
-               );
-               out center;
-               """
+            [out:json];
+            (
+                node["tourism"](around:{radius},{lat},{lng});
+                node["leisure"="park"](around:{radius},{lat},{lng});
+                node["amenity"="restaurant"](around:{radius},{lat},{lng});
+                node["amenity"="cafe"](around:{radius},{lat},{lng});
+                node["amenity"="theatre"](around:{radius},{lat},{lng});
+                node["amenity"="cinema"](around:{radius},{lat},{lng});
+                node["amenity"="arts_centre"](around:{radius},{lat},{lng});
+                node["shop"="mall"](around:{radius},{lat},{lng});
+                way["tourism"](around:{radius},{lat},{lng});
+                way["leisure"="park"](around:{radius},{lat},{lng});
+                relation["tourism"](around:{radius},{lat},{lng});
+                relation["leisure"="park"](around:{radius},{lat},{lng});
+            );
+            out center;
+            """
 
-            response = requests.get(overpass_url, params={"data": query})
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    overpass_url, params={"data": query}
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        places = []
 
-            if response.status_code == 200:
-                data = response.json()
-                places = []
+                        for element in data.get("elements", [])[
+                            :15
+                        ]:  # Increase limit to get more candidates
+                            if element["type"] == "node":
+                                place_lat = element["lat"]
+                                place_lng = element["lon"]
+                            else:  # way or relation
+                                if "center" in element:
+                                    place_lat = element["center"]["lat"]
+                                    place_lng = element["center"]["lon"]
+                                else:
+                                    continue
 
-                for element in data.get("elements", [])[
-                    :15
-                ]:  # Increase limit to get more candidates
-                    if element["type"] == "node":
-                        place_lat = element["lat"]
-                        place_lng = element["lon"]
-                    else:  # way or relation
-                        if "center" in element:
-                            place_lat = element["center"]["lat"]
-                            place_lng = element["center"]["lon"]
-                        else:
-                            continue
+                            tags = element.get("tags", {})
+                            name = tags.get("name", "Unnamed location")
 
-                    tags = element.get("tags", {})
-                    name = tags.get("name", "Unnamed location")
+                            if name == "Unnamed location":
+                                continue
 
-                    if name == "Unnamed location":
-                        continue
+                            place_type = []
+                            if "tourism" in tags:
+                                place_type.append(tags["tourism"])
+                            if "leisure" in tags:
+                                place_type.append(tags["leisure"])
+                            if "amenity" in tags:
+                                place_type.append(tags["amenity"])
+                            if "shop" in tags:
+                                place_type.append(tags["shop"])
 
-                    place_type = []
-                    if "tourism" in tags:
-                        place_type.append(tags["tourism"])
-                    if "leisure" in tags:
-                        place_type.append(tags["leisure"])
-                    if "amenity" in tags:
-                        place_type.append(tags["amenity"])
-                    if "shop" in tags:
-                        place_type.append(tags["shop"])
+                            places.append(
+                                {
+                                    "name": name,
+                                    "lat": place_lat,
+                                    "lng": place_lng,
+                                    "types": place_type,
+                                    "address": tags.get("addr:street", "")
+                                    + " "
+                                    + tags.get("addr:housenumber", ""),
+                                }
+                            )
 
-                    places.append(
-                        {
-                            "name": name,
-                            "lat": place_lat,
-                            "lng": place_lng,
-                            "types": place_type,
-                            "address": tags.get("addr:street", "")
-                            + " "
-                            + tags.get("addr:housenumber", ""),
-                        }
-                    )
-
-                return places
-            return []
+                        return places
+                    return []
         except Exception as e:
             print(f"Error getting nearby places: {e}")
             return []
@@ -415,79 +443,97 @@ class ActivityRecommendationAgent:
                 "departure": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             }
 
-            response = requests.post(url, json=body, headers=headers)
+            # Use an async session for HTTP requests
+            async with aiohttp.ClientSession() as session:
+                # Try the OpenRouteService API first
+                async with session.post(url, json=body, headers=headers) as response:
+                    if response.status != 200:
+                        # If OpenRouteService fails, use Overpass to find nearby transit stops
+                        overpass_url = "https://overpass-api.de/api/interpreter"
+                        query = f"""
+                        [out:json];
+                        (
+                        node["public_transport"="stop_position"](around:1000,{dest_lat},{dest_lng});
+                        node["highway"="bus_stop"](around:1000,{dest_lat},{dest_lng});
+                        node["railway"="station"](around:1000,{dest_lat},{dest_lng});
+                        node["railway"="tram_stop"](around:1000,{dest_lat},{dest_lng});
+                        );
+                        out;
+                        """
 
-            if response.status_code != 200:
-                overpass_url = "https://overpass-api.de/api/interpreter"
-                query = f"""
-               [out:json];
-               (
-                 node["public_transport"="stop_position"](around:1000,{dest_lat},{dest_lng});
-                 node["highway"="bus_stop"](around:1000,{dest_lat},{dest_lng});
-                 node["railway"="station"](around:1000,{dest_lat},{dest_lng});
-                 node["railway"="tram_stop"](around:1000,{dest_lat},{dest_lng});
-               );
-               out;
-               """
+                        async with session.get(
+                            overpass_url, params={"data": query}
+                        ) as transit_response:
+                            if transit_response.status == 200:
+                                transit_data = await transit_response.json()
+                                transit_stops = transit_data.get("elements", [])
 
-                transit_response = requests.get(overpass_url, params={"data": query})
-                if transit_response.status_code == 200:
-                    transit_data = transit_response.json()
-                    transit_stops = transit_data.get("elements", [])
+                                if transit_stops:
+                                    closest_stop = min(
+                                        transit_stops,
+                                        key=lambda x: self.haversine_distance(
+                                            dest_lat, dest_lng, x["lat"], x["lon"]
+                                        ),
+                                    )
 
-                    if transit_stops:
-                        closest_stop = min(
-                            transit_stops,
-                            key=lambda x: self.haversine_distance(
-                                dest_lat, dest_lng, x["lat"], x["lon"]
-                            ),
-                        )
+                                    stop_name = closest_stop.get("tags", {}).get(
+                                        "name", "Unknown stop"
+                                    )
+                                    stop_type = []
+                                    if "public_transport" in closest_stop.get(
+                                        "tags", {}
+                                    ):
+                                        stop_type.append(
+                                            closest_stop["tags"]["public_transport"]
+                                        )
+                                    if "highway" in closest_stop.get("tags", {}):
+                                        stop_type.append(
+                                            closest_stop["tags"]["highway"]
+                                        )
+                                    if "railway" in closest_stop.get("tags", {}):
+                                        stop_type.append(
+                                            closest_stop["tags"]["railway"]
+                                        )
 
-                        stop_name = closest_stop.get("tags", {}).get(
-                            "name", "Unknown stop"
-                        )
-                        stop_type = []
-                        if "public_transport" in closest_stop.get("tags", {}):
-                            stop_type.append(closest_stop["tags"]["public_transport"])
-                        if "highway" in closest_stop.get("tags", {}):
-                            stop_type.append(closest_stop["tags"]["highway"])
-                        if "railway" in closest_stop.get("tags", {}):
-                            stop_type.append(closest_stop["tags"]["railway"])
+                                    return {
+                                        "available": True,
+                                        "transit_type": ", ".join(stop_type),
+                                        "stop_name": stop_name,
+                                        "distance_to_stop": f"{int(self.haversine_distance(dest_lat, dest_lng, closest_stop['lat'], closest_stop['lon']) * 1000)}m",
+                                        "note": "Transit information is approximated based on nearby stops.",
+                                    }
 
-                        return {
-                            "available": True,
-                            "transit_type": ", ".join(stop_type),
-                            "stop_name": stop_name,
-                            "distance_to_stop": f"{int(self.haversine_distance(dest_lat, dest_lng, closest_stop['lat'], closest_stop['lon']) * 1000)}m",
-                            "note": "Transit information is approximated based on nearby stops.",
-                        }
+                        return {"available": False}
 
-                return {"available": False}
+                    # Process OpenRouteService response if successful
+                    data = await response.json()
+                    if "features" in data and len(data["features"]) > 0:
+                        route = data["features"][0]
+                        properties = route.get("properties", {})
+                        segments = properties.get("segments", [{}])[0]
+                        steps = segments.get("steps", [])
 
-            # Process OpenRouteService response
-            data = response.json()
-            if "features" in data and len(data["features"]) > 0:
-                route = data["features"][0]
-                properties = route.get("properties", {})
-                segments = properties.get("segments", [{}])[0]
-                steps = segments.get("steps", [])
+                        transit_steps = [
+                            step
+                            for step in steps
+                            if step.get("type") == "public_transport"
+                        ]
 
-                transit_steps = [
-                    step for step in steps if step.get("type") == "public_transport"
-                ]
+                        if transit_steps:
+                            return {
+                                "available": True,
+                                "duration": properties.get("summary", {}).get(
+                                    "duration", 0
+                                )
+                                / 60,
+                                "transit_options": len(transit_steps),
+                                "transit_types": [
+                                    step.get("mode", "transit")
+                                    for step in transit_steps
+                                ],
+                            }
 
-                if transit_steps:
-                    return {
-                        "available": True,
-                        "duration": properties.get("summary", {}).get("duration", 0)
-                        / 60,
-                        "transit_options": len(transit_steps),
-                        "transit_types": [
-                            step.get("mode", "transit") for step in transit_steps
-                        ],
-                    }
-
-            return {"available": False}
+                    return {"available": False}
         except Exception as e:
             print(f"Error getting transit info: {e}")
             return {"available": False}
@@ -833,9 +879,12 @@ class ActivityRecommendationAgent:
         messages.append({"role": "user", "content": user_prompt})
 
         try:
-            response = await self.mistral_client.chat.complete_async(
-                model=MISTRAL_MODEL,
-                messages=messages,
+            response = await asyncio.wait_for(
+                self.mistral_client.chat.complete_async(
+                    model=MISTRAL_MODEL,
+                    messages=messages,
+                ),
+                timeout=20.0,  # 20 second timeout
             )
 
             recommendations = response.choices[0].message.content
@@ -861,13 +910,56 @@ class ActivityRecommendationAgent:
             view = None
             if transit_accessible_places:
                 view = discord.ui.View(timeout=180)  # 3 minute timeout
-                for place in transit_accessible_places:
-                    # Create a button for each place
-                    button = BookmarkButton(place["name"], place)
+                for index, place in enumerate(transit_accessible_places):
+                    # Create a button for each place with a unique index
+                    button = BookmarkButton(place["name"], place, index)
                     view.add_item(button)
 
             return final_response, view
+
+        except asyncio.TimeoutError:
+            # Handle timeout gracefully
+            print("Mistral API request timed out after 20 seconds")
+            recommendations = "I'm sorry, but it's taking longer than expected to generate recommendations. Here are some general suggestions based on the data we have:"
+
+            # Create a basic response using the available data
+            if transit_accessible_places:
+                for i, place in enumerate(transit_accessible_places[:3], 1):
+                    place_types = ", ".join(place.get("types", ["place"]))
+                    recommendations += f"\n\n{i}. {place['name']} ({place_types})"
+                    if "transit_info" in place and place["transit_info"].get(
+                        "available"
+                    ):
+                        if "transit_type" in place["transit_info"]:
+                            recommendations += f"\n   Transit: {place['transit_info']['transit_type']} available"
+
+            # Format the title
+            if place_type:
+                title = f"**{place_type.title()} options near {destination_location} accessible by public transit:**"
+            else:
+                title = f"**Activities near {destination_location} accessible by public transit:**"
+
+            final_response = f"{title}\n\n{recommendations}\n\nYou can try asking again for more detailed information."
+
+            # Store the bot's response in conversation history
+            self.conversation_manager.add_message(user_id, "assistant", final_response)
+
+            # Store recommendations for this user to retrieve when buttons are clicked
+            self.last_recommendations[str(user_id)] = transit_accessible_places
+
+            # Create a view with bookmark buttons for each recommendation
+            view = None
+            if transit_accessible_places:
+                view = discord.ui.View(timeout=180)  # 3 minute timeout
+                for index, place in enumerate(transit_accessible_places):
+                    # Create a button for each place with a unique index
+                    button = BookmarkButton(place["name"], place, index)
+                    view.add_item(button)
+
+            return final_response, view
+
         except Exception as e:
+            # Handle other exceptions
             print(f"Error getting recommendations from Mistral: {e}")
             error_message = f"I had trouble generating recommendations for {destination_location}. Please try again later."
             self.conversation_manager.add_message(user_id, "assistant", error_message)
@@ -886,10 +978,20 @@ class ActivityRecommendationAgent:
             return "Fall"
 
     def get_place_by_name(self, user_id, place_name):
-        """Get place details by name from user's last recommendations."""
+        """Get place details by name from user's last recommendations.
+
+        This will perform an exact match first, then a case-insensitive match if needed.
+        """
         user_id = str(user_id)
         if user_id in self.last_recommendations:
+            # Try exact match first
             for place in self.last_recommendations[user_id]:
                 if place["name"] == place_name:
+                    return place
+
+            # If no exact match, try case-insensitive match
+            place_name_lower = place_name.lower()
+            for place in self.last_recommendations[user_id]:
+                if place["name"].lower() == place_name_lower:
                     return place
         return None
