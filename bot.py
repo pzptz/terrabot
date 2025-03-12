@@ -393,24 +393,16 @@ async def help_transit(ctx):
             '- "What can I do in Seattle?"\n'
             '- "Recommend activities near Chicago"\n'
             '- "What should I explore in Boston?"\n\n'
-            "**2. Use the command:**\n"
-            "`!activities [location]`\n"
-            "Example: `!activities New York City`"
-        ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="Bookmark Features:",
-        value=(
-            "**Save locations you like:**\n"
-            "`!add [location]` - Add a location to your bookmarks\n"
-            "`!delete [bookmark name]` - Remove a bookmark\n"
-            "`!list` - See all your bookmarks\n"
-            "**Or just ask naturally:**\n"
             '- "Bookmark Central Park"\n'
             '- "Show my bookmarks"\n'
             '- "Delete bookmark A"'
+            "**2. Use the command:**\n"
+            "`!activities [location]`\n"
+            "Example: `!activities New York City`\n"
+            "`!add [location]` - Add a location to your bookmarks\n"
+            "Example: `!add New York City`\n"
+            "`!delete [bookmark name]` - Remove a bookmark\n"
+            "Example: `!delete A`\n"
         ),
         inline=False,
     )
