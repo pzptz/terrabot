@@ -5,6 +5,7 @@ from mistralai import Mistral
 import discord
 from geopy.geocoders import Nominatim
 from datetime import datetime
+from discord.ui import Button, View
 
 MISTRAL_MODEL = "mistral-large-latest"
 SYSTEM_PROMPT = """You are TerraBot, a helpful assistant that recommends activities accessible by public transit.
@@ -22,6 +23,18 @@ When greeted, ask the user what type of activities they're looking for and where
 If asked how to use you, remind the user that they can try the "!help" option along with other suggestions (don't suggest other commands).
 
 Provide information on the weather and explain why that affects your recommendations.
+
+If the user prompt includes anything about adding a location to the bookmark list, redirect the user to using the `!add <location>` command.
+
+If the user prompt includes anything about deleting/removing a location to the bookmark list, redirect the user to using the `!delete <bookmark number>` command.
+
+If the user prompt includes anything about showing the bookmark list, redirect the user to using the `!list` command.
+
+If the user prompt includes anything about clearing the bookmark list, redirect the user to using the `!delete-all` command.
+
+Words like collection, database, and list should be treated as the same thing as bookmark, meaning reference to these words should redirect to the appropriate bookmark command.
+
+After generating a list of activities at a certain place and before generating the bookmark buttons, ask the user if they're interested in any of the activities and tell them feel free to bookmark any of them using the buttons below.
 
 Only respond with recommendations based on the information provided. Keep responses concise and practical."""
 
@@ -57,6 +70,23 @@ class ConversationManager:
         user_id = str(user_id)
         if user_id in self.conversations:
             self.conversations[user_id] = []
+
+
+class BookmarkButton(discord.ui.Button):
+    def __init__(self, place_name, place_details):
+        """Initialize a button to bookmark a place."""
+        super().__init__(
+            style=discord.ButtonStyle.primary,
+            label=f"Bookmark {place_name}",
+            custom_id=f"bookmark_{place_name}",
+        )
+        self.place_name = place_name
+        self.place_details = place_details
+        
+    async def callback(self, interaction: discord.Interaction):
+        """Called when the button is clicked."""
+        # This will be handled by the event listener in bot.py
+        pass
 
 
 class ActivityRecommendationAgent:
@@ -110,6 +140,9 @@ class ActivityRecommendationAgent:
             "movie": ["cinema"],
             "show": ["theatre", "arts_centre"],
         }
+        
+        # Store the last set of recommendations to use for buttons
+        self.last_recommendations = {}
 
     async def get_coordinates(self, location_name):
         """Convert a location name to coordinates using OpenStreetMap/Nominatim."""
@@ -566,6 +599,17 @@ class ActivityRecommendationAgent:
             )
 
             if transit_info["available"]:
+
+                # Add score for places that are 30-60 minutes away by transit
+                transit_score = 1.0
+                if "duration" in transit_info:
+                    duration_minutes = transit_info["duration"]
+                    # Prioritize places 30-60 minutes away with higher scores
+                    if 20 <= duration_minutes <= 60:
+                        transit_score = 1.5
+                        if 25 <= duration_minutes <= 45:
+                            transit_score = 2.0  # Best transit time range
+                
                 transit_accessible_places.append(
                     {
                         "name": place["name"],
@@ -645,13 +689,22 @@ class ActivityRecommendationAgent:
 
             # Store the bot's response in conversation history
             self.conversation_manager.add_message(user_id, "assistant", final_response)
+            
+            # Create a view with bookmark buttons for each recommendation
+            view = None
+            if transit_accessible_places:
+                view = discord.ui.View(timeout=180)  # 3 minute timeout
+                for place in transit_accessible_places:
+                    # Create a button for each place
+                    button = BookmarkButton(place["name"], place)
+                    view.add_item(button)
 
-            return final_response
+            return final_response, view
         except Exception as e:
             print(f"Error getting recommendations from Mistral: {e}")
             error_message = f"I had trouble generating recommendations for {location}. Please try again later."
             self.conversation_manager.add_message(user_id, "assistant", error_message)
-            return error_message
+            return error_message, None  # No view due to error
 
     def get_current_season(self):
         """Get the current season based on month."""
@@ -664,3 +717,12 @@ class ActivityRecommendationAgent:
             return "Summer"
         else:
             return "Fall"
+    
+    def get_place_by_name(self, user_id, place_name):
+        """Get place details by name from user's last recommendations."""
+        user_id = str(user_id)
+        if user_id in self.last_recommendations:
+            for place in self.last_recommendations[user_id]:
+                if place["name"] == place_name:
+                    return place
+        return None

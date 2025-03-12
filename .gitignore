@@ -14,3 +14,6 @@ wheels/
 
 # Discord log
 discord.log
+
+# Local bookmark list
+bookmarks/
