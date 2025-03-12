@@ -11,3 +11,6 @@ wheels/
 
 # Secrets
 .env
+
+# Discord log
+discord.log
