@@ -23,7 +23,15 @@ If asked how to use you, remind the user that they can try the "!help" option al
 
 Provide information on the weather and explain why that affects your recommendations.
 
-If the user prompt includes anything about adding or deleting a location from the bookmark list or viewing the bookmark list, let process_bookmark_request return True and respond accordingly.
+If the user prompt includes anything about adding a location to the bookmark list, redirect the user to using the `!add <location>` command.
+
+If the user prompt includes anything about deleting/removing a location to the bookmark list, redirect the user to using the `!delete <bookmark number>` command.
+
+If the user prompt includes anything about showing the bookmark list, redirect the user to using the `!list` command.
+
+If the user prompt includes anything about clearing the bookmark list, redirect the user to using the `!delete-all` command.
+
+Words like collection, database, and list should be treated as the same thing as bookmark, meaning reference to these words should redirect to the appropriate bookmark command.
 
 Only respond with recommendations based on the information provided. Keep responses concise and practical."""
 

@@ -191,111 +191,6 @@ async def list_bookmarks(ctx):
     await ctx.send(embed=embed)
 
 
-async def process_bookmark_request(message):
-    """Process natural language requests for bookmark management."""
-    content = message.content.lower()
-    user_id = str(message.author.id)
-
-    # Pattern matching for bookmark-related requests
-    if "save" in content or "bookmark" in content or "remember" in content:
-        # Extract location (simple approach)
-        location_phrases = ["this place", "location", "spot", "area", "place"]
-        for phrase in location_phrases:
-            if phrase in content:
-                # Try to extract location from context
-                # This is a simplified approach - in a real bot, you'd use NLP
-                words = content.split()
-                idx = words.index(phrase.split()[0])
-                if idx > 0 and words[idx - 1] == "this":
-                    # User is referring to a location mentioned earlier
-                    # You'd need to track conversation context
-                    await message.reply(
-                        "I'd love to save this location, but I need to know what place you're referring to. Could you specify which location you'd like to bookmark?"
-                    )
-                    return True
-
-        # Extract location after keywords
-        for keyword in ["save", "bookmark", "remember"]:
-            if keyword in content:
-                parts = content.split(keyword, 1)
-                if len(parts) > 1:
-                    location = parts[1].strip()
-                    # Clean up the location string
-                    for ending in ["please", "for me", "for later", "."]:
-                        if location.endswith(ending):
-                            location = location.rsplit(ending, 1)[0].strip()
-
-                    if location:
-                        # Create a context that mimics command context
-                        mock_ctx = discord.Object(id=0)
-                        mock_ctx.send = message.channel.send
-                        mock_ctx.author = message.author
-
-                        # Call the add bookmark command
-                        await add_bookmark(mock_ctx, location=location)
-                        return True
-
-    # Pattern matching for listing bookmarks
-    if any(
-        phrase in content
-        for phrase in [
-            "show my bookmarks",
-            "list my bookmarks",
-            "what are my bookmarks",
-            "show saved",
-            "list saved",
-        ]
-    ):
-        # Create a context that mimics command context
-        mock_ctx = discord.Object(id=0)
-        mock_ctx.send = message.channel.send
-        mock_ctx.author = message.author
-
-        # Call the list bookmarks command
-        await list_bookmarks(mock_ctx)
-        return True
-
-    # Pattern matching for deleting bookmarks
-    if any(
-        phrase in content
-        for phrase in ["remove bookmark", "delete bookmark", "forget location"]
-    ):
-        bookmarks = load_bookmarks(user_id)
-        if not bookmarks:
-            await message.reply(
-                "You don't have any bookmarks to delete. Use `!add <location>` to create some first!"
-            )
-            return True
-
-        # Check if any bookmark name is mentioned
-        for name in bookmarks.keys():
-            if name.lower() in content.lower():
-                # Create a context that mimics command context
-                mock_ctx = discord.Object(id=0)
-                mock_ctx.send = message.channel.send
-                mock_ctx.author = message.author
-
-                # Call the delete bookmark command
-                await delete_bookmark(mock_ctx, bookmark_name=name)
-                return True
-
-        # If no specific bookmark is mentioned
-        await message.reply(
-            "Which bookmark would you like to delete? Here are your current bookmarks:"
-        )
-
-        # Create a context that mimics command context
-        mock_ctx = discord.Object(id=0)
-        mock_ctx.send = message.channel.send
-        mock_ctx.author = message.author
-
-        # Call the list bookmarks command
-        await list_bookmarks(mock_ctx)
-        return True
-
-    return False
-
-
 @bot.event
 async def on_message(message: discord.Message):
     """Process incoming messages."""
@@ -308,11 +203,6 @@ async def on_message(message: discord.Message):
 
     # Ignore messages with command prefix
     if message.content.startswith(PREFIX):
-        return
-
-    # Check for bookmark-related requests
-    bookmark_processed = await process_bookmark_request(message)
-    if bookmark_processed:
         return
 
     async with message.channel.typing():
@@ -392,11 +282,11 @@ async def help_transit(ctx):
             '- "Show my bookmarks"\n'
             '- "Delete bookmark 1"\n\n'
             "**2. Use the command:**\n"
-            "- `!activities [location]`\n"
+            "- `!activities <location>`\n"
             "Example: `!activities New York City`\n"
-            "- `!add [location]`\n"
+            "- `!add <location>`\n"
             "Example: `!add New York City`\n"
-            "- `!delete [bookmark number]`\n"
+            "- `!delete <bookmark number>`\n"
             "Example: `!delete 1`"
         ),
         inline=False,
@@ -415,9 +305,9 @@ async def help_transit(ctx):
     embed.add_field(
         name="Available Commands:",
         value=(
-            f"`{PREFIX}activities [location]` - Get activity recommendations\n"
-            f"`{PREFIX}add [location]` - Add a location to bookmarks\n"
-            f"`{PREFIX}delete [bookmark number]` - Remove a bookmark\n"
+            f"`{PREFIX}activities <location>` - Get activity recommendations\n"
+            f"`{PREFIX}add <location>` - Add a location to bookmarks\n"
+            f"`{PREFIX}delete <bookmark number>` - Remove a bookmark\n"
             f"`{PREFIX}list` - View all your bookmarks\n"
             f"`{PREFIX}help` - Display this help message\n"
             f"`{PREFIX}clear` - Clear your conversation history"
@@ -437,6 +327,32 @@ async def clear_history(ctx):
     await ctx.send(
         "🧹 I've cleared our conversation history. What would you like to talk about now?"
     )
+
+
+@bot.command(name="delete-all", help="Delete all your bookmarked locations.")
+async def clear_bookmarks(ctx):
+    """Simple command to clear all of a user's bookmarks without button confirmation."""
+    user_id = str(ctx.author.id)
+    bookmarks = load_bookmarks(user_id)
+
+    if not bookmarks:
+        await ctx.send("📭 You don't have any bookmarked locations to clear.")
+        return
+
+    # Count how many bookmarks will be deleted
+    bookmark_count = len(bookmarks)
+
+    # Clear the bookmarks and save
+    bookmarks.clear()
+    save_bookmarks(user_id, bookmarks)
+
+    embed = discord.Embed(
+        title="🗑️ Bookmarks Cleared",
+        description=f"Successfully deleted all {bookmark_count} of your bookmarks.",
+        color=discord.Color.red(),
+    )
+
+    await ctx.send(embed=embed)
 
 
 # Start the bot
