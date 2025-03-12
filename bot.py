@@ -78,41 +78,50 @@ async def on_interaction(interaction):
     if interaction.type == discord.InteractionType.component:
         # Extract info from custom_id
         custom_id = interaction.data.get("custom_id", "")
-        
+
         if custom_id.startswith("bookmark_"):
-            # Extract place name from custom_id
-            place_name = custom_id[9:]  # Remove "bookmark_" prefix
-            
+            # Extract place name from custom_id by removing "bookmark_" prefix and any suffix
+            # The format is "bookmark_PLACENAME_INDEX"
+            parts = custom_id[9:].split("_")
+            if len(parts) > 1:
+                # Remove the index (last part) to get the place name
+                place_name = "_".join(parts[:-1])
+            else:
+                # For backward compatibility with old format
+                place_name = parts[0]
+
             # Get place details from the agent's last recommendations
             place_info = agent.get_place_by_name(interaction.user.id, place_name)
-            
+
             if place_info:
                 user_id = str(interaction.user.id)
                 bookmarks = load_bookmarks(user_id)
-                
+
                 # Find next available number for bookmark name
                 used_names = set(bookmarks.keys())
                 counter = 1
                 while str(counter) in used_names:
                     counter += 1
-                
+
                 name = str(counter)
-                
+
                 # Format a nice description for the bookmark
                 place_types = ", ".join(place_info.get("types", ["place"]))
                 transit_info = place_info.get("transit_info", {})
                 transit_details = ""
-                
+
                 if transit_info.get("transit_type"):
                     transit_details = f" - {transit_info.get('transit_type')} available"
                 elif transit_info.get("transit_types"):
-                    transit_details = f" - {', '.join(transit_info.get('transit_types'))} available"
-                
+                    transit_details = (
+                        f" - {', '.join(transit_info.get('transit_types'))} available"
+                    )
+
                 # Create bookmark with formatted description
                 bookmark_description = f"{place_name} ({place_types}){transit_details}"
                 bookmarks[name] = bookmark_description
                 save_bookmarks(user_id, bookmarks)
-                
+
                 # Create an embed response
                 embed = discord.Embed(
                     title="📍 Location Bookmarked",
@@ -124,38 +133,38 @@ async def on_interaction(interaction):
                 embed.set_footer(
                     text=f"You now have {len(bookmarks)} bookmarks. Use !list to see them all."
                 )
-                
+
                 # Respond to the interaction
                 await interaction.response.send_message(embed=embed, ephemeral=True)
             else:
                 # Place not found in recommendations
                 await interaction.response.send_message(
-                    "Sorry, I couldn't find details for this place anymore. Try asking for recommendations again.", 
-                    ephemeral=True
+                    "Sorry, I couldn't find details for this place anymore. Try asking for recommendations again.",
+                    ephemeral=True,
                 )
-        
+
         elif custom_id.startswith("delete_bookmark_"):
             # Extract bookmark ID from custom_id
             bookmark_id = custom_id[16:]  # Remove "delete_bookmark_" prefix
-            
+
             user_id = str(interaction.user.id)
             bookmarks = load_bookmarks(user_id)
-            
+
             if bookmark_id in bookmarks:
                 # Get the bookmark location before deleting
                 location = bookmarks[bookmark_id]
-                
+
                 # Delete the bookmark
                 del bookmarks[bookmark_id]
                 save_bookmarks(user_id, bookmarks)
-                
+
                 # Create an embed response
                 embed = discord.Embed(
                     title="🗑️ Bookmark Deleted",
                     description=f"Successfully removed bookmark `{bookmark_id}`: `{location}`",
                     color=discord.Color.red(),
                 )
-                
+
                 # Add information about remaining bookmarks
                 if bookmarks:
                     embed.set_footer(
@@ -165,10 +174,10 @@ async def on_interaction(interaction):
                     embed.set_footer(
                         text="You have no bookmarks remaining. Use the Bookmark buttons on recommendations to add new ones!"
                     )
-                
+
                 # Respond to the interaction
                 await interaction.response.send_message(embed=embed, ephemeral=True)
-                
+
                 # Update the bookmarks list message with new buttons if there are still bookmarks
                 if interaction.message:
                     if bookmarks:
@@ -178,18 +187,22 @@ async def on_interaction(interaction):
                             description=f"You have {len(bookmarks)} saved locations:",
                             color=discord.Color.blue(),
                         )
-                        
+
                         # Add each bookmark to the embed
                         for name, location in bookmarks.items():
-                            new_embed.add_field(name=f"Bookmark {name}", value=location, inline=False)
-                        
-                        new_embed.set_footer(text="Click the Delete button to remove a bookmark or use !delete-all to clear all.")
-                        
+                            new_embed.add_field(
+                                name=f"Bookmark {name}", value=location, inline=False
+                            )
+
+                        new_embed.set_footer(
+                            text="Click the Delete button to remove a bookmark or use !delete-all to clear all."
+                        )
+
                         # Create a new view with delete buttons for the remaining bookmarks
                         new_view = discord.ui.View(timeout=300)
                         for remaining_id in bookmarks.keys():
                             new_view.add_item(DeleteBookmarkButton(remaining_id))
-                        
+
                         await interaction.message.edit(embed=new_embed, view=new_view)
                     else:
                         # No bookmarks remaining, update the message accordingly
@@ -198,13 +211,13 @@ async def on_interaction(interaction):
                             description="You have deleted all your bookmarks.",
                             color=discord.Color.blue(),
                         )
-                        
+
                         await interaction.message.edit(embed=empty_embed, view=None)
             else:
                 # Bookmark not found
                 await interaction.response.send_message(
                     f"❌ Bookmark `{bookmark_id}` not found. It may have already been deleted.",
-                    ephemeral=True
+                    ephemeral=True,
                 )
 
 
@@ -268,12 +281,12 @@ async def add_bookmark(ctx, *, location=None):
 
 @bot.command(
     name="delete",
-    help="Remove a location from your bookmarks. Usage: !delete <bookmark name>",
+    help="Remove a location from your bookmarks. Usage: !delete <number>",
 )
 async def delete_bookmark(ctx, bookmark_name=None):
     """Command to delete a location from the user's bookmarks."""
     if bookmark_name is None:
-        await ctx.send("Please specify a bookmark to delete. Example: `!delete A`")
+        await ctx.send("Please specify a bookmark to delete. Example: `!delete 1`")
         return
 
     user_id = str(ctx.author.id)
@@ -306,14 +319,15 @@ class DeleteBookmarkButton(discord.ui.Button):
         super().__init__(
             style=discord.ButtonStyle.danger,
             label=f"🗑️ {bookmark_id}",
-            custom_id=f"delete_bookmark_{bookmark_id}"
+            custom_id=f"delete_bookmark_{bookmark_id}",
         )
         self.bookmark_id = bookmark_id
-        
+
     async def callback(self, interaction: discord.Interaction):
         """Called when the button is clicked."""
         # This will be handled by the on_interaction event handler
         pass
+
 
 @bot.command(name="list", help="List all your bookmarked locations.")
 async def list_bookmarks(ctx):
@@ -337,7 +351,9 @@ async def list_bookmarks(ctx):
     for name, location in bookmarks.items():
         embed.add_field(name=f"Bookmark {name}", value=location, inline=False)
 
-    embed.set_footer(text="Click the Delete button to remove a bookmark or use !delete-all to clear all.")
+    embed.set_footer(
+        text="Click the Delete button to remove a bookmark or use !delete-all to clear all."
+    )
 
     # Create a view with delete buttons for each bookmark
     view = discord.ui.View(timeout=300)  # 5 minute timeout
@@ -417,7 +433,7 @@ async def activities(ctx, *, location=None):
             def __init__(self, author, content):
                 self.author = author
                 self.content = content
-        
+
         mock_message = MockMessage(ctx.author, f"recommend activities in {location}")
 
         # Process with the agent
@@ -447,20 +463,10 @@ async def help_transit(ctx):
             '- "Recommend activities near Chicago"\n'
             '- "What should I explore in Boston?"\n\n'
             "**2. Use the command:**\n"
-            "- `!activities <location>`\n"
-            "Example: `!activities New York City`"
-        ),
-        inline=False,
-    )
-    
-    embed.add_field(
-        name="Bookmark Features:",
-        value=(
-            "• Click the **Bookmark** buttons under recommendations to save them\n"
-            "• Use `!list` to see all your saved bookmarks\n"
-            "• Use `!delete <number>` to remove a specific bookmark\n"
-            "• Use `!add <location>` to manually add a bookmark\n"
-            "• Use `!delete-all` to clear all your bookmarks"
+            '- "`!activities <location>`"\n'
+            "Example: `!activities New York City`\n"
+            '- "`!delete <number>`"\n'
+            "Example: `!delete 1`"
         ),
         inline=False,
     )
@@ -479,12 +485,12 @@ async def help_transit(ctx):
         name="Available Commands:",
         value=(
             f"`{PREFIX}activities <location>` - Get activity recommendations\n"
-            f"`{PREFIX}add <location>` - Add a location to bookmarks\n"
-            f"`{PREFIX}delete <bookmark number>` - Remove a bookmark\n"
             f"`{PREFIX}list` - View all your bookmarks\n"
+            f"`{PREFIX}add <location>` - Add a location to bookmarks\n"
+            f"`{PREFIX}delete <number>` - Remove a bookmark\n"
+            f"`{PREFIX}delete-all` - Delete all your bookmarks\n"
             f"`{PREFIX}help` - Display this help message\n"
             f"`{PREFIX}clear` - Clear your conversation history\n"
-            f"`{PREFIX}delete-all` - Delete all your bookmarks"
         ),
         inline=False,
     )

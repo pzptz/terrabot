@@ -3,6 +3,8 @@ import json
 import requests
 from mistralai import Mistral
 import discord
+import aiohttp
+import asyncio
 from geopy.geocoders import Nominatim
 from datetime import datetime
 from discord.ui import Button, View
@@ -20,21 +22,21 @@ If asked who you are or what your name is, respond that your name is TerraBot, a
 
 When greeted, ask the user what type of activities they're looking for and where they're looking for such activities.
 
-If asked how to use you, remind the user that they can try the "!help" option along with other suggestions (don't suggest other commands).
+If asked how to use you, remind the user that they can try the `!help` option along with other suggestions.
 
 Provide information on the weather and explain why that affects your recommendations.
 
 If the user prompt includes anything about adding a location to the bookmark list, redirect the user to using the `!add <location>` command.
 
-If the user prompt includes anything about deleting/removing a location to the bookmark list, redirect the user to using the `!delete <bookmark number>` command.
+If the user prompt includes anything about deleting/removing a location to the bookmark list, redirect the user to using the `!delete <number>` command.
 
 If the user prompt includes anything about showing the bookmark list, redirect the user to using the `!list` command.
 
 If the user prompt includes anything about clearing the bookmark list, redirect the user to using the `!delete-all` command.
 
-Words like collection, database, and list should be treated as the same thing as bookmark, meaning reference to these words should redirect to the appropriate bookmark command.
+Do not suggest any commands outside of `!activities <location>`, `!help`, `!add <location>`, `!delete <number>`, `!list`, `!clear`, and `!delete-all`. For example, do NOT mention something like `!setloc`.
 
-After generating a list of activities at a certain place and before generating the bookmark buttons, ask the user if they're interested in any of the activities and tell them feel free to bookmark any of them using the buttons below.
+Words like collection, database, and list should be treated as the same thing as bookmark, meaning reference to these words should redirect to the appropriate bookmark command.
 
 Only respond with recommendations based on the information provided. Keep responses concise and practical."""
 
@@ -73,16 +75,34 @@ class ConversationManager:
 
 
 class BookmarkButton(discord.ui.Button):
-    def __init__(self, place_name, place_details):
-        """Initialize a button to bookmark a place."""
+    def __init__(self, place_name, place_details, index=0):
+        """Initialize a button to bookmark a place.
+
+        Args:
+            place_name: Name of the place
+            place_details: Dictionary containing place details
+            index: Index to make the custom_id unique
+        """
+        # Create a unique custom_id by appending an index or timestamp
+        unique_id = f"bookmark_{place_name}_{index}"
+
+        # Make sure the custom_id is not too long (Discord has a 100-character limit)
+        if len(unique_id) > 95:
+            # Truncate the place name if needed
+            unique_id = f"bookmark_{place_name[:80]}_{index}"
+
         super().__init__(
             style=discord.ButtonStyle.primary,
-            label=f"Bookmark {place_name}",
-            custom_id=f"bookmark_{place_name}",
+            label=(
+                f"Bookmark {place_name[:20]}"
+                if len(place_name) > 20
+                else f"Bookmark {place_name}"
+            ),
+            custom_id=unique_id,
         )
         self.place_name = place_name
         self.place_details = place_details
-        
+
     async def callback(self, interaction: discord.Interaction):
         """Called when the button is clicked."""
         # This will be handled by the event listener in bot.py
@@ -140,14 +160,19 @@ class ActivityRecommendationAgent:
             "movie": ["cinema"],
             "show": ["theatre", "arts_centre"],
         }
-        
+
         # Store the last set of recommendations to use for buttons
         self.last_recommendations = {}
 
     async def get_coordinates(self, location_name):
         """Convert a location name to coordinates using OpenStreetMap/Nominatim."""
         try:
-            location = self.geolocator.geocode(location_name)
+            # Create a thread executor to run the blocking geocode operation
+            loop = asyncio.get_event_loop()
+            location = await loop.run_in_executor(
+                None, lambda: self.geolocator.geocode(location_name)
+            )
+
             if location:
                 return {
                     "lat": location.latitude,
@@ -163,17 +188,18 @@ class ActivityRecommendationAgent:
         """Get current weather for the coordinates."""
         try:
             url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lng}&units=metric&appid={self.openweather_api_key}"
-            response = requests.get(url)
-            data = response.json()
 
-            if response.status_code == 200:
-                return {
-                    "description": data["weather"][0]["description"],
-                    "temperature": data["main"]["temp"],
-                    "feels_like": data["main"]["feels_like"],
-                    "humidity": data["main"]["humidity"],
-                }
-            return None
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return {
+                            "description": data["weather"][0]["description"],
+                            "temperature": data["main"]["temp"],
+                            "feels_like": data["main"]["feels_like"],
+                            "humidity": data["main"]["humidity"],
+                        }
+                    return None
         except Exception as e:
             print(f"Error getting weather: {e}")
             return None
@@ -301,101 +327,103 @@ class ActivityRecommendationAgent:
                 # If no specific types are matched, use the default query
                 if not query_parts:
                     query = f"""
-                    [out:json];
-                    (
-                      node["tourism"](around:{radius},{lat},{lng});
-                      node["leisure"="park"](around:{radius},{lat},{lng});
-                      node["amenity"="restaurant"](around:{radius},{lat},{lng});
-                      node["amenity"="cafe"](around:{radius},{lat},{lng});
-                      node["amenity"="theatre"](around:{radius},{lat},{lng});
-                      node["amenity"="cinema"](around:{radius},{lat},{lng});
-                      node["amenity"="arts_centre"](around:{radius},{lat},{lng});
-                      node["shop"="mall"](around:{radius},{lat},{lng});
-                      way["tourism"](around:{radius},{lat},{lng});
-                      way["leisure"="park"](around:{radius},{lat},{lng});
-                      relation["tourism"](around:{radius},{lat},{lng});
-                      relation["leisure"="park"](around:{radius},{lat},{lng});
-                    );
-                    out center;
-                    """
-                else:
-                    query = f"""
-                    [out:json];
-                    (
-                      {' '.join(query_parts)}
-                    );
-                    out center;
-                    """
-            else:
-                # Default query with all types
-                query = f"""
                 [out:json];
                 (
-                  node["tourism"](around:{radius},{lat},{lng});
-                  node["leisure"="park"](around:{radius},{lat},{lng});
-                  node["amenity"="restaurant"](around:{radius},{lat},{lng});
-                  node["amenity"="cafe"](around:{radius},{lat},{lng});
-                  node["amenity"="theatre"](around:{radius},{lat},{lng});
-                  node["amenity"="cinema"](around:{radius},{lat},{lng});
-                  node["amenity"="arts_centre"](around:{radius},{lat},{lng});
-                  node["shop"="mall"](around:{radius},{lat},{lng});
-                  way["tourism"](around:{radius},{lat},{lng});
-                  way["leisure"="park"](around:{radius},{lat},{lng});
-                  relation["tourism"](around:{radius},{lat},{lng});
-                  relation["leisure"="park"](around:{radius},{lat},{lng});
+                    node["tourism"](around:{radius},{lat},{lng});
+                    node["leisure"="park"](around:{radius},{lat},{lng});
+                    node["amenity"="restaurant"](around:{radius},{lat},{lng});
+                    node["amenity"="cafe"](around:{radius},{lat},{lng});
+                    node["amenity"="theatre"](around:{radius},{lat},{lng});
+                    node["amenity"="cinema"](around:{radius},{lat},{lng});
+                    node["amenity"="arts_centre"](around:{radius},{lat},{lng});
+                    node["shop"="mall"](around:{radius},{lat},{lng});
+                    way["tourism"](around:{radius},{lat},{lng});
+                    way["leisure"="park"](around:{radius},{lat},{lng});
+                    relation["tourism"](around:{radius},{lat},{lng});
+                    relation["leisure"="park"](around:{radius},{lat},{lng});
                 );
                 out center;
                 """
+                else:
+                    query = f"""
+                [out:json];
+                (
+                    {' '.join(query_parts)}
+                );
+                out center;
+                """
+            else:
+                # Default query with all types
+                query = f"""
+            [out:json];
+            (
+                node["tourism"](around:{radius},{lat},{lng});
+                node["leisure"="park"](around:{radius},{lat},{lng});
+                node["amenity"="restaurant"](around:{radius},{lat},{lng});
+                node["amenity"="cafe"](around:{radius},{lat},{lng});
+                node["amenity"="theatre"](around:{radius},{lat},{lng});
+                node["amenity"="cinema"](around:{radius},{lat},{lng});
+                node["amenity"="arts_centre"](around:{radius},{lat},{lng});
+                node["shop"="mall"](around:{radius},{lat},{lng});
+                way["tourism"](around:{radius},{lat},{lng});
+                way["leisure"="park"](around:{radius},{lat},{lng});
+                relation["tourism"](around:{radius},{lat},{lng});
+                relation["leisure"="park"](around:{radius},{lat},{lng});
+            );
+            out center;
+            """
 
-            response = requests.get(overpass_url, params={"data": query})
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    overpass_url, params={"data": query}
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        places = []
 
-            if response.status_code == 200:
-                data = response.json()
-                places = []
+                        for element in data.get("elements", [])[
+                            :15
+                        ]:  # Increase limit to get more candidates
+                            if element["type"] == "node":
+                                place_lat = element["lat"]
+                                place_lng = element["lon"]
+                            else:  # way or relation
+                                if "center" in element:
+                                    place_lat = element["center"]["lat"]
+                                    place_lng = element["center"]["lon"]
+                                else:
+                                    continue
 
-                for element in data.get("elements", [])[
-                    :15
-                ]:  # Increase limit to get more candidates
-                    if element["type"] == "node":
-                        place_lat = element["lat"]
-                        place_lng = element["lon"]
-                    else:  # way or relation
-                        if "center" in element:
-                            place_lat = element["center"]["lat"]
-                            place_lng = element["center"]["lon"]
-                        else:
-                            continue
+                            tags = element.get("tags", {})
+                            name = tags.get("name", "Unnamed location")
 
-                    tags = element.get("tags", {})
-                    name = tags.get("name", "Unnamed location")
+                            if name == "Unnamed location":
+                                continue
 
-                    if name == "Unnamed location":
-                        continue
+                            place_type = []
+                            if "tourism" in tags:
+                                place_type.append(tags["tourism"])
+                            if "leisure" in tags:
+                                place_type.append(tags["leisure"])
+                            if "amenity" in tags:
+                                place_type.append(tags["amenity"])
+                            if "shop" in tags:
+                                place_type.append(tags["shop"])
 
-                    place_type = []
-                    if "tourism" in tags:
-                        place_type.append(tags["tourism"])
-                    if "leisure" in tags:
-                        place_type.append(tags["leisure"])
-                    if "amenity" in tags:
-                        place_type.append(tags["amenity"])
-                    if "shop" in tags:
-                        place_type.append(tags["shop"])
+                            places.append(
+                                {
+                                    "name": name,
+                                    "lat": place_lat,
+                                    "lng": place_lng,
+                                    "types": place_type,
+                                    "address": tags.get("addr:street", "")
+                                    + " "
+                                    + tags.get("addr:housenumber", ""),
+                                }
+                            )
 
-                    places.append(
-                        {
-                            "name": name,
-                            "lat": place_lat,
-                            "lng": place_lng,
-                            "types": place_type,
-                            "address": tags.get("addr:street", "")
-                            + " "
-                            + tags.get("addr:housenumber", ""),
-                        }
-                    )
-
-                return places
-            return []
+                        return places
+                    return []
         except Exception as e:
             print(f"Error getting nearby places: {e}")
             return []
@@ -415,79 +443,97 @@ class ActivityRecommendationAgent:
                 "departure": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             }
 
-            response = requests.post(url, json=body, headers=headers)
+            # Use an async session for HTTP requests
+            async with aiohttp.ClientSession() as session:
+                # Try the OpenRouteService API first
+                async with session.post(url, json=body, headers=headers) as response:
+                    if response.status != 200:
+                        # If OpenRouteService fails, use Overpass to find nearby transit stops
+                        overpass_url = "https://overpass-api.de/api/interpreter"
+                        query = f"""
+                        [out:json];
+                        (
+                        node["public_transport"="stop_position"](around:1000,{dest_lat},{dest_lng});
+                        node["highway"="bus_stop"](around:1000,{dest_lat},{dest_lng});
+                        node["railway"="station"](around:1000,{dest_lat},{dest_lng});
+                        node["railway"="tram_stop"](around:1000,{dest_lat},{dest_lng});
+                        );
+                        out;
+                        """
 
-            if response.status_code != 200:
-                overpass_url = "https://overpass-api.de/api/interpreter"
-                query = f"""
-                [out:json];
-                (
-                  node["public_transport"="stop_position"](around:1000,{dest_lat},{dest_lng});
-                  node["highway"="bus_stop"](around:1000,{dest_lat},{dest_lng});
-                  node["railway"="station"](around:1000,{dest_lat},{dest_lng});
-                  node["railway"="tram_stop"](around:1000,{dest_lat},{dest_lng});
-                );
-                out;
-                """
+                        async with session.get(
+                            overpass_url, params={"data": query}
+                        ) as transit_response:
+                            if transit_response.status == 200:
+                                transit_data = await transit_response.json()
+                                transit_stops = transit_data.get("elements", [])
 
-                transit_response = requests.get(overpass_url, params={"data": query})
-                if transit_response.status_code == 200:
-                    transit_data = transit_response.json()
-                    transit_stops = transit_data.get("elements", [])
+                                if transit_stops:
+                                    closest_stop = min(
+                                        transit_stops,
+                                        key=lambda x: self.haversine_distance(
+                                            dest_lat, dest_lng, x["lat"], x["lon"]
+                                        ),
+                                    )
 
-                    if transit_stops:
-                        closest_stop = min(
-                            transit_stops,
-                            key=lambda x: self.haversine_distance(
-                                dest_lat, dest_lng, x["lat"], x["lon"]
-                            ),
-                        )
+                                    stop_name = closest_stop.get("tags", {}).get(
+                                        "name", "Unknown stop"
+                                    )
+                                    stop_type = []
+                                    if "public_transport" in closest_stop.get(
+                                        "tags", {}
+                                    ):
+                                        stop_type.append(
+                                            closest_stop["tags"]["public_transport"]
+                                        )
+                                    if "highway" in closest_stop.get("tags", {}):
+                                        stop_type.append(
+                                            closest_stop["tags"]["highway"]
+                                        )
+                                    if "railway" in closest_stop.get("tags", {}):
+                                        stop_type.append(
+                                            closest_stop["tags"]["railway"]
+                                        )
 
-                        stop_name = closest_stop.get("tags", {}).get(
-                            "name", "Unknown stop"
-                        )
-                        stop_type = []
-                        if "public_transport" in closest_stop.get("tags", {}):
-                            stop_type.append(closest_stop["tags"]["public_transport"])
-                        if "highway" in closest_stop.get("tags", {}):
-                            stop_type.append(closest_stop["tags"]["highway"])
-                        if "railway" in closest_stop.get("tags", {}):
-                            stop_type.append(closest_stop["tags"]["railway"])
+                                    return {
+                                        "available": True,
+                                        "transit_type": ", ".join(stop_type),
+                                        "stop_name": stop_name,
+                                        "distance_to_stop": f"{int(self.haversine_distance(dest_lat, dest_lng, closest_stop['lat'], closest_stop['lon']) * 1000)}m",
+                                        "note": "Transit information is approximated based on nearby stops.",
+                                    }
 
-                        return {
-                            "available": True,
-                            "transit_type": ", ".join(stop_type),
-                            "stop_name": stop_name,
-                            "distance_to_stop": f"{int(self.haversine_distance(dest_lat, dest_lng, closest_stop['lat'], closest_stop['lon']) * 1000)}m",
-                            "note": "Transit information is approximated based on nearby stops.",
-                        }
+                        return {"available": False}
 
-                return {"available": False}
+                    # Process OpenRouteService response if successful
+                    data = await response.json()
+                    if "features" in data and len(data["features"]) > 0:
+                        route = data["features"][0]
+                        properties = route.get("properties", {})
+                        segments = properties.get("segments", [{}])[0]
+                        steps = segments.get("steps", [])
 
-            # Process OpenRouteService response
-            data = response.json()
-            if "features" in data and len(data["features"]) > 0:
-                route = data["features"][0]
-                properties = route.get("properties", {})
-                segments = properties.get("segments", [{}])[0]
-                steps = segments.get("steps", [])
+                        transit_steps = [
+                            step
+                            for step in steps
+                            if step.get("type") == "public_transport"
+                        ]
 
-                transit_steps = [
-                    step for step in steps if step.get("type") == "public_transport"
-                ]
+                        if transit_steps:
+                            return {
+                                "available": True,
+                                "duration": properties.get("summary", {}).get(
+                                    "duration", 0
+                                )
+                                / 60,
+                                "transit_options": len(transit_steps),
+                                "transit_types": [
+                                    step.get("mode", "transit")
+                                    for step in transit_steps
+                                ],
+                            }
 
-                if transit_steps:
-                    return {
-                        "available": True,
-                        "duration": properties.get("summary", {}).get("duration", 0)
-                        / 60,
-                        "transit_options": len(transit_steps),
-                        "transit_types": [
-                            step.get("mode", "transit") for step in transit_steps
-                        ],
-                    }
-
-            return {"available": False}
+                    return {"available": False}
         except Exception as e:
             print(f"Error getting transit info: {e}")
             return {"available": False}
@@ -532,10 +578,117 @@ class ActivityRecommendationAgent:
 
         return None, False  # No specific place type found
 
+    def extract_origin_location(self, content):
+        """Extract origin location from message content"""
+        content_lower = content.lower()
+
+        # Check for common starting point phrases
+        origin_keywords = [
+            "from ",
+            "starting from ",
+            "leaving from ",
+            "departing from ",
+            "my location is ",
+            "i'm at ",
+            "i am at ",
+            "starting point is ",
+        ]
+
+        for keyword in origin_keywords:
+            if keyword in content_lower:
+                parts = content_lower.split(keyword, 1)
+                if len(parts) > 1:
+                    raw_location = parts[1].strip()
+
+                    # Look for end markers
+                    cutoff_phrases = [
+                        " to ",
+                        " and ",
+                        " heading ",
+                        " going ",
+                        ". ",
+                        ", ",
+                    ]
+
+                    for phrase in cutoff_phrases:
+                        if phrase in raw_location:
+                            raw_location = raw_location.split(phrase, 1)[0].strip()
+
+                    return raw_location
+
+        # Check if we can find a more general origin hint
+        # This would handle cases like "activities in NYC from Boston"
+        if " from " in content_lower and (
+            " in " in content_lower or " near " in content_lower
+        ):
+            # This is a complex case where we have both destination and origin
+            # First get everything after "from"
+            parts = content_lower.split(" from ", 1)
+            if len(parts) > 1:
+                origin_part = parts[1].strip()
+
+                # Look for end markers
+                cutoff_phrases = [
+                    " to ",
+                    " and ",
+                    " heading ",
+                    " going ",
+                    ". ",
+                    ", ",
+                ]
+
+                for phrase in cutoff_phrases:
+                    if phrase in origin_part:
+                        origin_part = origin_part.split(phrase, 1)[0].strip()
+
+                return origin_part
+
+        return None
+
+    def extract_destination_location(self, content):
+        """Extract destination location from message content"""
+        content_lower = content.lower()
+
+        # Use existing location extraction logic from the code
+        location_keywords = ["in ", "near ", "around "]
+
+        for keyword in location_keywords:
+            if keyword in content_lower:
+                parts = content_lower.split(keyword, 1)
+                if len(parts) > 1:
+                    raw_location = parts[1].strip()
+
+                    cutoff_phrases = [
+                        " that",
+                        " which",
+                        " using",
+                        " with",
+                        " by",
+                        " via",
+                        " on",
+                        " through",
+                        " where",
+                        " when",
+                        " for",
+                        " and",
+                        " from",
+                    ]
+
+                    for phrase in cutoff_phrases:
+                        if phrase in raw_location:
+                            raw_location = raw_location.split(phrase, 1)[0].strip()
+
+                    return raw_location
+
+        return None
+
     async def run(self, message: discord.Message):
         """Process the message and return activity recommendations."""
         content = message.content
         user_id = message.author.id
+
+        # Clear previous recommendations for this user
+        self.last_recommendations[str(user_id)] = []
 
         # Store this message in the conversation history
         self.conversation_manager.add_message(user_id, "user", content)
@@ -544,62 +697,87 @@ class ActivityRecommendationAgent:
         place_type, is_name_question = self.extract_place_type(content)
 
         if is_name_question:
-            response = "My name is TerraBot! I'm a Discord bot that helps you find activities accessible by public transit. How can I assist you today?"
+            response = "My name is TerraBot! I'm a Discord bot that helps users find activities accessible by public transit. How can I assist you today?"
             self.conversation_manager.add_message(user_id, "assistant", response)
-            return response
+            return response, None  # No view since there are no recommendations
 
         # Extract location information
         origin_location = self.extract_origin_location(content)
-
         destination_location = self.extract_destination_location(content)
-        
+
         # If we don't have any location at all, ask for origin first
         if not origin_location and not destination_location:
-            response = "To help you find activities accessible by public transit, I need to know your starting location. Where will you be traveling from?"
-            self.conversation_manager.add_message(user_id, "assistant", response)
-            return response
-        
+            # Get the conversation history
+            conversation_history = self.conversation_manager.get_history(user_id)
+
+            # Prepare messages for Mistral including history
+            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+            # Add relevant conversation history (skipping the latest user message which we'll add separately)
+            for msg in conversation_history[:-1]:
+                messages.append(msg)
+
+            # Add the latest user message
+            messages.append({"role": "user", "content": content})
+
+            response = await self.mistral_client.chat.complete_async(
+                model=MISTRAL_MODEL,
+                messages=messages,
+            )
+
+            mistral_response = response.choices[0].message.content
+            self.conversation_manager.add_message(
+                user_id, "assistant", mistral_response
+            )
+            return mistral_response, None  # No view since there are no recommendations
+
         # If we have an origin but no destination, use the origin as the destination area to explore
         if origin_location and not destination_location:
             destination_location = origin_location
 
-        if not origin_location and destination_location:
-            response = "To help you find activities accessible by public transit, I need to know your starting location. Where will you be traveling from?"
-            self.conversation_manager.add_message(user_id, "assistant", response)
-            return response
-        
         # Get coordinates for both locations
         origin_coords = None
         if origin_location:
             origin_coords = await self.get_coordinates(origin_location)
             if not origin_coords:
-                return f"Sorry, I couldn't find the location '{origin_location}'. Please try a different location."
-        
+                return (
+                    f"Sorry, I couldn't find the location '{origin_location}'. Please try a different location.",
+                    None,
+                )
+
         dest_coords = await self.get_coordinates(destination_location)
         if not dest_coords:
-            return f"Sorry, I couldn't find the location '{destination_location}'. Please try a different location."
-        
-        
+            return (
+                f"Sorry, I couldn't find the location '{destination_location}'. Please try a different location.",
+                None,
+            )
+
         # Get weather at destination
         weather = await self.get_weather(dest_coords["lat"], dest_coords["lng"])
 
         # Get nearby places of interest, filtered by place type if specified
         places = await self.get_nearby_places(
-            coords["lat"], coords["lng"], place_type=place_type
+            dest_coords["lat"], dest_coords["lng"], place_type=place_type
         )
 
-        # Filter places that are accessible by public transit
+        # Filter places that are accessible by public transit from origin
         transit_accessible_places = []
-        for place in places[:5]:
+        for place in places[:10]:  # Check more places to get better options
             place_lat = place["lat"]
             place_lng = place["lng"]
 
-            transit_info = await self.get_transit_info(
-                coords["lat"], coords["lng"], place_lat, place_lng
-            )
+            # If we have an origin, calculate transit from origin to place
+            if origin_coords:
+                transit_info = await self.get_transit_info(
+                    origin_coords["lat"], origin_coords["lng"], place_lat, place_lng
+                )
+            else:
+                # Use destination as origin if no specific origin provided (for exploring an area)
+                transit_info = await self.get_transit_info(
+                    dest_coords["lat"], dest_coords["lng"], place_lat, place_lng
+                )
 
             if transit_info["available"]:
-
                 # Add score for places that are 30-60 minutes away by transit
                 transit_score = 1.0
                 if "duration" in transit_info:
@@ -609,50 +787,83 @@ class ActivityRecommendationAgent:
                         transit_score = 1.5
                         if 25 <= duration_minutes <= 45:
                             transit_score = 2.0  # Best transit time range
-                
-                transit_accessible_places.append(
-                    {
-                        "name": place["name"],
-                        "address": place.get(
-                            "address", "Check maps for exact location"
-                        ),
-                        "types": place.get("types", []),
-                        "transit_info": transit_info,
-                    }
-                )
 
+                place_info = {
+                    "name": place["name"],
+                    "address": place.get("address", "Check maps for exact location"),
+                    "types": place.get("types", []),
+                    "transit_info": transit_info,
+                    "transit_score": transit_score,
+                }
+
+                transit_accessible_places.append(place_info)
+
+        # Sort places by transit score to prioritize better transit options
+        transit_accessible_places = sorted(
+            transit_accessible_places,
+            key=lambda x: x.get("transit_score", 0),
+            reverse=True,
+        )
+
+        # Limit to 5 places for recommendations - this is key to match button count with recommendations
+        transit_accessible_places = transit_accessible_places[:5]
+
+        # Prepare context variables for string formatting
         current_season = self.get_current_season()
         current_time = datetime.now().strftime("%A, %I:%M %p")
 
         context = {
-            "location": coords["formatted_address"],
+            "origin": origin_coords["formatted_address"] if origin_coords else None,
+            "destination": dest_coords["formatted_address"],
             "weather": weather if weather else "Unknown",
             "season": current_season,
             "current_time": current_time,
             "transit_accessible_places": transit_accessible_places,
         }
 
-        # Format a prompt for Mistral
+        # Prepare string formatting variables to avoid undefined variable issues
         place_type_text = f" focusing on {place_type} options" if place_type else ""
+        origin_text = f"from {context['origin']}" if context["origin"] else ""
+        origin_details = (
+            f"- Origin: {context['origin']}"
+            if context["origin"]
+            else "- No specific origin provided"
+        )
+        weather_info = (
+            json.dumps(context["weather"], indent=2)
+            if weather
+            else "Weather information unavailable"
+        )
+        places_info = (
+            json.dumps(transit_accessible_places, indent=2)
+            if transit_accessible_places
+            else "No places with public transit access found"
+        )
 
+        # Format a prompt for Mistral
         user_prompt = f"""
-        I need recommendations for activities near {location}{place_type_text} that are accessible by public transit.
-        
-        Location details:
-        - Full address: {context['location']}
-        - Current time: {context['current_time']}
-        - Season: {context['season']}
-        
-        Weather information:
-        {json.dumps(context['weather'], indent=2) if weather else "Weather information unavailable"}
-        
-        Places accessible by public transit:
-        {json.dumps(context['transit_accessible_places'], indent=2) if transit_accessible_places else "No places with public transit access found"}
-        
-        Consider the conversation history when making recommendations. The user might have mentioned preferences or constraints in previous messages.
-        
-        Please provide 3-5 specific recommendations based on this data. If no transit-accessible places were found, suggest popular activities in the area that might have public transit access not listed in the data.
-        """
+       I need recommendations for activities near {destination_location}{place_type_text} that are accessible by public transit {origin_text}.
+      
+       Location details:
+       {origin_details}
+       - Destination area: {context['destination']}
+       - Current time: {context['current_time']}
+       - Season: {context['season']}
+      
+       Weather information:
+       {weather_info}
+      
+       Places accessible by public transit:
+       {places_info}
+      
+       Consider the conversation history when making recommendations. The user might have mentioned preferences or constraints in previous messages.
+      
+       Please prioritize recommendations that are 30-60 minutes away by public transit, as these offer a good balance of accessibility and exploration.
+      
+       Please provide {len(transit_accessible_places)} specific recommendations based on this data. Make sure to mention ALL of the places in the "Places accessible by public transit" list above.
+      
+       If no transit-accessible places were found, suggest popular activities in the area that might have public transit access not listed in the data.
+       """
 
         # Get all conversation history for context
         conversation_history = self.conversation_manager.get_history(user_id)
@@ -668,20 +879,22 @@ class ActivityRecommendationAgent:
         messages.append({"role": "user", "content": user_prompt})
 
         try:
-            response = await self.mistral_client.chat.complete_async(
-                model=MISTRAL_MODEL,
-                messages=messages,
+            response = await asyncio.wait_for(
+                self.mistral_client.chat.complete_async(
+                    model=MISTRAL_MODEL,
+                    messages=messages,
+                ),
+                timeout=20.0,  # 20 second timeout
             )
 
             recommendations = response.choices[0].message.content
 
             # Format the title according to whether we have a specific place type
             if place_type:
-                title = f"**{place_type.title()} options near {destination_location} accessible by public transit {origin_text}:**"
+                title = f"**{place_type.title()} options near {destination_location} accessible by public transit:**"
             else:
-                title = f"**Activities near {destination_location} accessible by public transit {origin_text}:**"
+                title = f"**Activities near {destination_location} accessible by public transit:**"
 
-    
             final_response = f"{title}\n\n{recommendations}"
 
             if not transit_accessible_places:
@@ -689,20 +902,66 @@ class ActivityRecommendationAgent:
 
             # Store the bot's response in conversation history
             self.conversation_manager.add_message(user_id, "assistant", final_response)
-            
+
+            # Store recommendations for this user to retrieve when buttons are clicked
+            self.last_recommendations[str(user_id)] = transit_accessible_places
+
             # Create a view with bookmark buttons for each recommendation
             view = None
             if transit_accessible_places:
                 view = discord.ui.View(timeout=180)  # 3 minute timeout
-                for place in transit_accessible_places:
-                    # Create a button for each place
-                    button = BookmarkButton(place["name"], place)
+                for index, place in enumerate(transit_accessible_places):
+                    # Create a button for each place with a unique index
+                    button = BookmarkButton(place["name"], place, index)
                     view.add_item(button)
 
             return final_response, view
+
+        except asyncio.TimeoutError:
+            # Handle timeout gracefully
+            print("Mistral API request timed out after 20 seconds")
+            recommendations = "I'm sorry, but it's taking longer than expected to generate recommendations. Here are some general suggestions based on the data we have:"
+
+            # Create a basic response using the available data
+            if transit_accessible_places:
+                for i, place in enumerate(transit_accessible_places[:3], 1):
+                    place_types = ", ".join(place.get("types", ["place"]))
+                    recommendations += f"\n\n{i}. {place['name']} ({place_types})"
+                    if "transit_info" in place and place["transit_info"].get(
+                        "available"
+                    ):
+                        if "transit_type" in place["transit_info"]:
+                            recommendations += f"\n   Transit: {place['transit_info']['transit_type']} available"
+
+            # Format the title
+            if place_type:
+                title = f"**{place_type.title()} options near {destination_location} accessible by public transit:**"
+            else:
+                title = f"**Activities near {destination_location} accessible by public transit:**"
+
+            final_response = f"{title}\n\n{recommendations}\n\nYou can try asking again for more detailed information."
+
+            # Store the bot's response in conversation history
+            self.conversation_manager.add_message(user_id, "assistant", final_response)
+
+            # Store recommendations for this user to retrieve when buttons are clicked
+            self.last_recommendations[str(user_id)] = transit_accessible_places
+
+            # Create a view with bookmark buttons for each recommendation
+            view = None
+            if transit_accessible_places:
+                view = discord.ui.View(timeout=180)  # 3 minute timeout
+                for index, place in enumerate(transit_accessible_places):
+                    # Create a button for each place with a unique index
+                    button = BookmarkButton(place["name"], place, index)
+                    view.add_item(button)
+
+            return final_response, view
+
         except Exception as e:
+            # Handle other exceptions
             print(f"Error getting recommendations from Mistral: {e}")
-            error_message = f"I had trouble generating recommendations for {location}. Please try again later."
+            error_message = f"I had trouble generating recommendations for {destination_location}. Please try again later."
             self.conversation_manager.add_message(user_id, "assistant", error_message)
             return error_message, None  # No view due to error
 
@@ -717,12 +976,22 @@ class ActivityRecommendationAgent:
             return "Summer"
         else:
             return "Fall"
-    
+
     def get_place_by_name(self, user_id, place_name):
-        """Get place details by name from user's last recommendations."""
+        """Get place details by name from user's last recommendations.
+
+        This will perform an exact match first, then a case-insensitive match if needed.
+        """
         user_id = str(user_id)
         if user_id in self.last_recommendations:
+            # Try exact match first
             for place in self.last_recommendations[user_id]:
                 if place["name"] == place_name:
+                    return place
+
+            # If no exact match, try case-insensitive match
+            place_name_lower = place_name.lower()
+            for place in self.last_recommendations[user_id]:
+                if place["name"].lower() == place_name_lower:
                     return place
         return None
