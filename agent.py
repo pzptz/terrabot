@@ -32,9 +32,9 @@ If the user prompt includes anything about showing the bookmark list, redirect t
 
 If the user prompt includes anything about clearing the bookmark list, redirect the user to using the `!delete-all` command.
 
-Words like collection, database, and list should be treated as the same thing as bookmark, meaning reference to these words should redirect to the appropriate bookmark command.
+Do not suggest any commands outside of `!activities <location>`, `!help`, `!add <location>`, `!delete <number>`, `!list`, `!clear`, and `!delete-all`. For example, do NOT mention something like `!setloc`.
 
-Do not suggest any commands outside of `!activities <location>`, `!help`, `!add <location>`, `!delete <number>`, `!list`, `!clear`, and `!delete-all`.
+Words like collection, database, and list should be treated as the same thing as bookmark, meaning reference to these words should redirect to the appropriate bookmark command.
 
 Only respond with recommendations based on the information provided. Keep responses concise and practical."""
 
