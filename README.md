@@ -48,7 +48,11 @@ Ensure you have the following before installation:
 
 3. **Setup API Keys:**
 
-- Create a .env file with your API keys (use .env.example as a template)
+- Create a .env file with your API keys:
+    - DISCORD_TOKEN
+    - MISTRAL_API_KEY
+    - OPENROUTE_API_KEY
+    - OPENWEATHER_API_KEY   
 
 4. **Run the bot:**
    ```bash
