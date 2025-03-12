@@ -397,7 +397,7 @@ async def help_transit(ctx):
             "- `!add [location]`\n"
             "Example: `!add New York City`\n"
             "- `!delete [bookmark number]`\n"
-            "Example: `!delete 1`\n\n"
+            "Example: `!delete 1`"
         ),
         inline=False,
     )

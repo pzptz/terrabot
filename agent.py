@@ -23,6 +23,8 @@ If asked how to use you, remind the user that they can try the "!help" option al
 
 Provide information on the weather and explain why that affects your recommendations.
 
+If the user prompt includes anything about adding or deleting a location from the bookmark list or viewing the bookmark list, let process_bookmark_request return True and respond accordingly.
+
 Only respond with recommendations based on the information provided. Keep responses concise and practical."""
 
 
