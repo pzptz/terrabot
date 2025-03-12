@@ -16,8 +16,47 @@ When recommending activities:
 5. Format your response in a clear, organized way with emoji
 
 If asked who you are or what your name is, respond that your name is TerraBot, a Discord bot that helps users find activities accessible by public transit.
+
 When greeted, ask the user what type of activities they're looking for and where they're looking for such activities.
+
+If asked how to use you, remind the user that they can try the "!helpme" option along with other suggestions.
+
+Provide information on the weather and explain why that affects your recommendations.
+
 Only respond with recommendations based on the information provided. Keep responses concise and practical."""
+
+
+class ConversationManager:
+    def __init__(self):
+        # Store conversations by user_id -> list of message tuples (role, content)
+        self.conversations = {}
+        self.max_history = 10  # Maximum number of messages to keep per user
+
+    def add_message(self, user_id, role, content):
+        """Add a message to the user's conversation history."""
+        user_id = str(user_id)
+
+        if user_id not in self.conversations:
+            self.conversations[user_id] = []
+
+        self.conversations[user_id].append({"role": role, "content": content})
+
+        # Trim history if it exceeds max length
+        if len(self.conversations[user_id]) > self.max_history:
+            self.conversations[user_id] = self.conversations[user_id][
+                -self.max_history :
+            ]
+
+    def get_history(self, user_id):
+        """Get the conversation history for a user."""
+        user_id = str(user_id)
+        return self.conversations.get(user_id, [])
+
+    def clear_history(self, user_id):
+        """Clear the conversation history for a user."""
+        user_id = str(user_id)
+        if user_id in self.conversations:
+            self.conversations[user_id] = []
 
 
 class ActivityRecommendationAgent:
@@ -28,6 +67,7 @@ class ActivityRecommendationAgent:
 
         self.mistral_client = Mistral(api_key=self.mistral_api_key)
         self.geolocator = Nominatim(user_agent="discord-activity-bot")
+        self.conversation_manager = ConversationManager()
 
         # Categories mapping for filtering places
         self.category_mapping = {
@@ -462,12 +502,18 @@ class ActivityRecommendationAgent:
     async def run(self, message: discord.Message):
         """Process the message and return activity recommendations."""
         content = message.content
+        user_id = message.author.id
+
+        # Store this message in the conversation history
+        self.conversation_manager.add_message(user_id, "user", content)
 
         # Check if it's a bot identification question
         place_type, is_name_question = self.extract_place_type(content)
 
         if is_name_question:
-            return "My name is TerraBot! I'm a Discord bot that helps you find activities accessible by public transit. How can I assist you today?"
+            response = "My name is TerraBot! I'm a Discord bot that helps you find activities accessible by public transit. How can I assist you today?"
+            self.conversation_manager.add_message(user_id, "assistant", response)
+            return response
 
         location_keywords = ["in ", "near ", "around "]
         location = None
@@ -502,17 +548,29 @@ class ActivityRecommendationAgent:
                     break
 
         if not location:
-            messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": message.content},
-            ]
+            # Get the conversation history
+            conversation_history = self.conversation_manager.get_history(user_id)
+
+            # Prepare messages for Mistral including history
+            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+            # Add relevant conversation history (skipping the latest user message which we'll add separately)
+            for msg in conversation_history[:-1]:
+                messages.append(msg)
+
+            # Add the latest user message
+            messages.append({"role": "user", "content": content})
 
             response = await self.mistral_client.chat.complete_async(
                 model=MISTRAL_MODEL,
                 messages=messages,
             )
 
-            return response.choices[0].message.content
+            mistral_response = response.choices[0].message.content
+            self.conversation_manager.add_message(
+                user_id, "assistant", mistral_response
+            )
+            return mistral_response
 
         # Get coordinates for the location
         coords = await self.get_coordinates(location)
@@ -576,14 +634,23 @@ class ActivityRecommendationAgent:
         Places accessible by public transit:
         {json.dumps(context['transit_accessible_places'], indent=2) if transit_accessible_places else "No places with public transit access found"}
         
+        Consider the conversation history when making recommendations. The user might have mentioned preferences or constraints in previous messages.
+        
         Please provide 3-5 specific recommendations based on this data. If no transit-accessible places were found, suggest popular activities in the area that might have public transit access not listed in the data.
         """
 
-        # Get recommendations from Mistral
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ]
+        # Get all conversation history for context
+        conversation_history = self.conversation_manager.get_history(user_id)
+
+        # Prepare messages for Mistral including history
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+        # Add relevant conversation history (up to 5 previous messages)
+        for msg in conversation_history[-5:-1]:  # Skip the current message
+            messages.append(msg)
+
+        # Add the current context as the latest user message
+        messages.append({"role": "user", "content": user_prompt})
 
         try:
             response = await self.mistral_client.chat.complete_async(
@@ -604,10 +671,15 @@ class ActivityRecommendationAgent:
             if not transit_accessible_places:
                 final_response += "\n\n*Note: Transit data may be limited. These are general recommendations based on popular places in the area.*"
 
+            # Store the bot's response in conversation history
+            self.conversation_manager.add_message(user_id, "assistant", final_response)
+
             return final_response
         except Exception as e:
             print(f"Error getting recommendations from Mistral: {e}")
-            return f"I had trouble generating recommendations for {location}. Please try again later."
+            error_message = f"I had trouble generating recommendations for {location}. Please try again later."
+            self.conversation_manager.add_message(user_id, "assistant", error_message)
+            return error_message
 
     def get_current_season(self):
         """Get the current season based on month."""

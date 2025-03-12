@@ -131,34 +131,41 @@ async def on_message(message: discord.Message):
     # Check if we can extract a location from the message
     location = extract_location(message.content)
 
-    if location:
-        # Message has a location, process it
-        async with message.channel.typing():
-            logger.info(f"Processing request from {message.author}: {message.content}")
+    async with message.channel.typing():
+        logger.info(f"Processing request from {message.author}: {message.content}")
 
-            # Show initial response with the detected location
-            initial_response = await message.reply(
-                f"🔍 Looking for activities in {location} accessible by public transit... This might take a moment!"
-            )
-
-            # Create a modified message with the properly formatted location query
-            modified_message = type("ModifiedMessage", (), {})()
-            modified_message.content = f"recommend activities in {location}"
-            modified_message.author = message.author
-
-            # Process with the agent
-            response = await agent.run(modified_message)
-
-            # Edit the initial message with the actual response
-            await initial_response.edit(content=response)
-    else:
-        # Process the message with the agent you wrote
-        # Open up the agent.py file to customize the agent
-        logger.info(f"Processing message from {message.author}: {message.content}")
-        response = await agent.run(message)
+        # if location:
+        # Show initial response with the detected location
+        # initial_response = await message.reply(
+        # f"🔍 Looking for activities in {location} accessible by public transit... This might take a moment!"
+        # )
+        # response = await agent.run(message)
 
         # Send the response back to the channel
+        # await initial_response.edit(content=response)
+        # else:
+        response = await agent.run(message)
         await message.reply(response)
+
+
+# Add command error handler for handling invalid commands
+@bot.event
+async def on_command_error(ctx, error):
+    """Handle command errors."""
+    if isinstance(error, commands.CommandNotFound):
+        # Log the error but don't show it in the console
+        logger.info(f"Invalid command used by {ctx.author}: {ctx.message.content}")
+
+        # Send a friendly message to the user
+        await ctx.send(
+            f"❌ Sorry, `{ctx.message.content}` is not a valid command. Type `{PREFIX}helpme` to see available commands."
+        )
+    else:
+        # For other types of errors, log them
+        logger.error(f"Command error: {error}")
+        await ctx.send(
+            "An error occurred while processing your command. Please try again later."
+        )
 
 
 # Commands
@@ -190,9 +197,7 @@ async def activities(ctx, *, location=None):
         await ctx.send(response)
 
 
-@bot.command(
-    name="help_transit", help="Shows how to use the transit recommendation bot"
-)
+@bot.command(name="helpme", help="Shows how to use the transit recommendation bot")
 async def help_transit(ctx):
     """Custom help command for the transit bot."""
     embed = discord.Embed(
@@ -225,9 +230,28 @@ async def help_transit(ctx):
         inline=False,
     )
 
+    embed.add_field(
+        name="Available Commands:",
+        value=(
+            f"`{PREFIX}activities [location]` - Get activity recommendations\n"
+            f"`{PREFIX}helpme` - Display this help message\n"
+            f"`{PREFIX}clear` - Clear your conversation history"
+        ),
+        inline=False,
+    )
+
     embed.set_footer(text="Powered by Mistral AI and OpenStreetMap")
 
     await ctx.send(embed=embed)
+
+
+@bot.command(name="clear", help="Clear your conversation history with the bot")
+async def clear_history(ctx):
+    """Command to clear conversation history."""
+    agent.conversation_manager.clear_history(ctx.author.id)
+    await ctx.send(
+        "🧹 I've cleared our conversation history. What would you like to talk about now?"
+    )
 
 
 # Start the bot
