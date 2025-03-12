@@ -94,27 +94,22 @@ async def add_bookmark(ctx, *, location=None):
             )
             return
 
-    # Generate a default name (A, B, C, etc.) if not provided
+    # Generate a default name based on numbers
     if ":" in location:
         name, place = location.split(":", 1)
         name = name.strip()
         place = place.strip()
     else:
-        # Find next available letter
-        letters = [chr(65 + i) for i in range(26)]  # A-Z
-        used_names = bookmarks.keys()
-        for letter in letters:
-            if letter not in used_names:
-                name = letter
-                place = location
-                break
-        else:
-            # If all letters are used, use numbers
-            i = 1
-            while str(i) in used_names:
-                i += 1
-            name = str(i)
-            place = location
+        # Find next available number
+        used_names = set(bookmarks.keys())
+
+        # Start from 1 and find the first unused number
+        counter = 1
+        while str(counter) in used_names:
+            counter += 1
+
+        name = str(counter)
+        place = location
 
     # Add to bookmarks
     bookmarks[name] = place
@@ -401,8 +396,8 @@ async def help_transit(ctx):
             "Example: `!activities New York City`\n"
             "- `!add [location]`\n"
             "Example: `!add New York City`\n"
-            "- `!delete [bookmark name]`\n"
-            "Example: `!delete A`\n"
+            "- `!delete [bookmark number]`\n"
+            "Example: `!delete 1`\n"
         ),
         inline=False,
     )
@@ -422,7 +417,7 @@ async def help_transit(ctx):
         value=(
             f"`{PREFIX}activities [location]` - Get activity recommendations\n"
             f"`{PREFIX}add [location]` - Add a location to bookmarks\n"
-            f"`{PREFIX}delete [bookmark]` - Remove a bookmark\n"
+            f"`{PREFIX}delete [bookmark number]` - Remove a bookmark\n"
             f"`{PREFIX}list` - View all your bookmarks\n"
             f"`{PREFIX}help` - Display this help message\n"
             f"`{PREFIX}clear` - Clear your conversation history"
