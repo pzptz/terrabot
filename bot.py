@@ -457,7 +457,9 @@ async def help_transit(ctx):
             '- "What should I explore in Boston?"\n\n'
             "**2. Use the command:**\n"
             '- "`!activities <location>`"\n'
-            "Example: `!activities New York City`"
+            "Example: `!activities New York City`\n"
+            '- "`!delete <number>`"\n'
+            "Example: `!delete 1`"
         ),
         inline=False,
     )
@@ -478,10 +480,10 @@ async def help_transit(ctx):
             f"`{PREFIX}activities <location>` - Get activity recommendations\n"
             f"`{PREFIX}list` - View all your bookmarks\n"
             f"`{PREFIX}add <location>` - Add a location to bookmarks\n"
-            f"`{PREFIX}delete <bookmark number>` - Remove a bookmark\n"
+            f"`{PREFIX}delete <number>` - Remove a bookmark\n"
             f"`{PREFIX}delete-all` - Delete all your bookmarks\n"
             f"`{PREFIX}help` - Display this help message\n"
-            f"`{PREFIX}clear` - Clear your conversation history"
+            f"`{PREFIX}clear` - Clear your conversation history\n"
         ),
         inline=False,
     )
