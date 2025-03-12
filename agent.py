@@ -80,7 +80,7 @@ class BookmarkButton(discord.ui.Button):
         )
         self.place_name = place_name
         self.place_details = place_details
-        
+
     async def callback(self, interaction: discord.Interaction):
         """Called when the button is clicked."""
         # This will be handled by the event listener in bot.py
@@ -138,7 +138,7 @@ class ActivityRecommendationAgent:
             "movie": ["cinema"],
             "show": ["theatre", "arts_centre"],
         }
-        
+
         # Store the last set of recommendations to use for buttons
         self.last_recommendations = {}
 
@@ -299,51 +299,51 @@ class ActivityRecommendationAgent:
                 # If no specific types are matched, use the default query
                 if not query_parts:
                     query = f"""
-                    [out:json];
-                    (
-                      node["tourism"](around:{radius},{lat},{lng});
-                      node["leisure"="park"](around:{radius},{lat},{lng});
-                      node["amenity"="restaurant"](around:{radius},{lat},{lng});
-                      node["amenity"="cafe"](around:{radius},{lat},{lng});
-                      node["amenity"="theatre"](around:{radius},{lat},{lng});
-                      node["amenity"="cinema"](around:{radius},{lat},{lng});
-                      node["amenity"="arts_centre"](around:{radius},{lat},{lng});
-                      node["shop"="mall"](around:{radius},{lat},{lng});
-                      way["tourism"](around:{radius},{lat},{lng});
-                      way["leisure"="park"](around:{radius},{lat},{lng});
-                      relation["tourism"](around:{radius},{lat},{lng});
-                      relation["leisure"="park"](around:{radius},{lat},{lng});
-                    );
-                    out center;
-                    """
+                   [out:json];
+                   (
+                     node["tourism"](around:{radius},{lat},{lng});
+                     node["leisure"="park"](around:{radius},{lat},{lng});
+                     node["amenity"="restaurant"](around:{radius},{lat},{lng});
+                     node["amenity"="cafe"](around:{radius},{lat},{lng});
+                     node["amenity"="theatre"](around:{radius},{lat},{lng});
+                     node["amenity"="cinema"](around:{radius},{lat},{lng});
+                     node["amenity"="arts_centre"](around:{radius},{lat},{lng});
+                     node["shop"="mall"](around:{radius},{lat},{lng});
+                     way["tourism"](around:{radius},{lat},{lng});
+                     way["leisure"="park"](around:{radius},{lat},{lng});
+                     relation["tourism"](around:{radius},{lat},{lng});
+                     relation["leisure"="park"](around:{radius},{lat},{lng});
+                   );
+                   out center;
+                   """
                 else:
                     query = f"""
-                    [out:json];
-                    (
-                      {' '.join(query_parts)}
-                    );
-                    out center;
-                    """
+                   [out:json];
+                   (
+                     {' '.join(query_parts)}
+                   );
+                   out center;
+                   """
             else:
                 # Default query with all types
                 query = f"""
-                [out:json];
-                (
-                  node["tourism"](around:{radius},{lat},{lng});
-                  node["leisure"="park"](around:{radius},{lat},{lng});
-                  node["amenity"="restaurant"](around:{radius},{lat},{lng});
-                  node["amenity"="cafe"](around:{radius},{lat},{lng});
-                  node["amenity"="theatre"](around:{radius},{lat},{lng});
-                  node["amenity"="cinema"](around:{radius},{lat},{lng});
-                  node["amenity"="arts_centre"](around:{radius},{lat},{lng});
-                  node["shop"="mall"](around:{radius},{lat},{lng});
-                  way["tourism"](around:{radius},{lat},{lng});
-                  way["leisure"="park"](around:{radius},{lat},{lng});
-                  relation["tourism"](around:{radius},{lat},{lng});
-                  relation["leisure"="park"](around:{radius},{lat},{lng});
-                );
-                out center;
-                """
+               [out:json];
+               (
+                 node["tourism"](around:{radius},{lat},{lng});
+                 node["leisure"="park"](around:{radius},{lat},{lng});
+                 node["amenity"="restaurant"](around:{radius},{lat},{lng});
+                 node["amenity"="cafe"](around:{radius},{lat},{lng});
+                 node["amenity"="theatre"](around:{radius},{lat},{lng});
+                 node["amenity"="cinema"](around:{radius},{lat},{lng});
+                 node["amenity"="arts_centre"](around:{radius},{lat},{lng});
+                 node["shop"="mall"](around:{radius},{lat},{lng});
+                 way["tourism"](around:{radius},{lat},{lng});
+                 way["leisure"="park"](around:{radius},{lat},{lng});
+                 relation["tourism"](around:{radius},{lat},{lng});
+                 relation["leisure"="park"](around:{radius},{lat},{lng});
+               );
+               out center;
+               """
 
             response = requests.get(overpass_url, params={"data": query})
 
@@ -418,15 +418,15 @@ class ActivityRecommendationAgent:
             if response.status_code != 200:
                 overpass_url = "https://overpass-api.de/api/interpreter"
                 query = f"""
-                [out:json];
-                (
-                  node["public_transport"="stop_position"](around:1000,{dest_lat},{dest_lng});
-                  node["highway"="bus_stop"](around:1000,{dest_lat},{dest_lng});
-                  node["railway"="station"](around:1000,{dest_lat},{dest_lng});
-                  node["railway"="tram_stop"](around:1000,{dest_lat},{dest_lng});
-                );
-                out;
-                """
+               [out:json];
+               (
+                 node["public_transport"="stop_position"](around:1000,{dest_lat},{dest_lng});
+                 node["highway"="bus_stop"](around:1000,{dest_lat},{dest_lng});
+                 node["railway"="station"](around:1000,{dest_lat},{dest_lng});
+                 node["railway"="tram_stop"](around:1000,{dest_lat},{dest_lng});
+               );
+               out;
+               """
 
                 transit_response = requests.get(overpass_url, params={"data": query})
                 if transit_response.status_code == 200:
@@ -533,16 +533,25 @@ class ActivityRecommendationAgent:
     def extract_origin_location(self, content):
         """Extract origin location from message content"""
         content_lower = content.lower()
-        
+
         # Check for common starting point phrases
-        origin_keywords = ["from ", "starting from ", "leaving from ", "departing from ", "my location is ", "i'm at ", "i am at ", "starting point is "]
-        
+        origin_keywords = [
+            "from ",
+            "starting from ",
+            "leaving from ",
+            "departing from ",
+            "my location is ",
+            "i'm at ",
+            "i am at ",
+            "starting point is ",
+        ]
+
         for keyword in origin_keywords:
             if keyword in content_lower:
                 parts = content_lower.split(keyword, 1)
                 if len(parts) > 1:
                     raw_location = parts[1].strip()
-                    
+
                     # Look for end markers
                     cutoff_phrases = [
                         " to ",
@@ -556,18 +565,20 @@ class ActivityRecommendationAgent:
                     for phrase in cutoff_phrases:
                         if phrase in raw_location:
                             raw_location = raw_location.split(phrase, 1)[0].strip()
-                    
+
                     return raw_location
-        
+
         # Check if we can find a more general origin hint
         # This would handle cases like "activities in NYC from Boston"
-        if " from " in content_lower and (" in " in content_lower or " near " in content_lower):
+        if " from " in content_lower and (
+            " in " in content_lower or " near " in content_lower
+        ):
             # This is a complex case where we have both destination and origin
             # First get everything after "from"
             parts = content_lower.split(" from ", 1)
             if len(parts) > 1:
                 origin_part = parts[1].strip()
-                
+
                 # Look for end markers
                 cutoff_phrases = [
                     " to ",
@@ -581,18 +592,18 @@ class ActivityRecommendationAgent:
                 for phrase in cutoff_phrases:
                     if phrase in origin_part:
                         origin_part = origin_part.split(phrase, 1)[0].strip()
-                
+
                 return origin_part
-        
+
         return None
 
     def extract_destination_location(self, content):
         """Extract destination location from message content"""
         content_lower = content.lower()
-        
+
         # Use existing location extraction logic from the code
         location_keywords = ["in ", "near ", "around "]
-        
+
         for keyword in location_keywords:
             if keyword in content_lower:
                 parts = content_lower.split(keyword, 1)
@@ -618,16 +629,16 @@ class ActivityRecommendationAgent:
                     for phrase in cutoff_phrases:
                         if phrase in raw_location:
                             raw_location = raw_location.split(phrase, 1)[0].strip()
-                    
+
                     return raw_location
-                    
+
         return None
 
     async def run(self, message: discord.Message):
         """Process the message and return activity recommendations."""
         content = message.content
         user_id = message.author.id
-        
+
         # Clear previous recommendations for this user
         self.last_recommendations[str(user_id)] = []
 
@@ -645,13 +656,13 @@ class ActivityRecommendationAgent:
         # Extract location information
         origin_location = self.extract_origin_location(content)
         destination_location = self.extract_destination_location(content)
-        
+
         # If we don't have any location at all, ask for origin first
         if not origin_location and not destination_location:
             response = "To help you find activities accessible by public transit, I need to know your starting location. Where will you be traveling from?"
             self.conversation_manager.add_message(user_id, "assistant", response)
             return response, None
-        
+
         # If we have an origin but no destination, use the origin as the destination area to explore
         if origin_location and not destination_location:
             destination_location = origin_location
@@ -660,18 +671,24 @@ class ActivityRecommendationAgent:
             response = "To help you find activities accessible by public transit, I need to know your starting location. Where will you be traveling from?"
             self.conversation_manager.add_message(user_id, "assistant", response)
             return response, None
-        
+
         # Get coordinates for both locations
         origin_coords = None
         if origin_location:
             origin_coords = await self.get_coordinates(origin_location)
             if not origin_coords:
-                return f"Sorry, I couldn't find the location '{origin_location}'. Please try a different location.", None
-        
+                return (
+                    f"Sorry, I couldn't find the location '{origin_location}'. Please try a different location.",
+                    None,
+                )
+
         dest_coords = await self.get_coordinates(destination_location)
         if not dest_coords:
-            return f"Sorry, I couldn't find the location '{destination_location}'. Please try a different location.", None
-        
+            return (
+                f"Sorry, I couldn't find the location '{destination_location}'. Please try a different location.",
+                None,
+            )
+
         # Get weather at destination
         weather = await self.get_weather(dest_coords["lat"], dest_coords["lng"])
 
@@ -707,22 +724,22 @@ class ActivityRecommendationAgent:
                         transit_score = 1.5
                         if 25 <= duration_minutes <= 45:
                             transit_score = 2.0  # Best transit time range
-                
+
                 place_info = {
                     "name": place["name"],
                     "address": place.get("address", "Check maps for exact location"),
                     "types": place.get("types", []),
                     "transit_info": transit_info,
-                    "transit_score": transit_score
+                    "transit_score": transit_score,
                 }
-                
+
                 transit_accessible_places.append(place_info)
-        
+
         # Sort places by transit score to prioritize better transit options
         transit_accessible_places = sorted(
-            transit_accessible_places, 
-            key=lambda x: x.get("transit_score", 0), 
-            reverse=True
+            transit_accessible_places,
+            key=lambda x: x.get("transit_score", 0),
+            reverse=True,
         )
 
         # Limit to 5 places for recommendations - this is key to match button count with recommendations
@@ -731,7 +748,7 @@ class ActivityRecommendationAgent:
         # Prepare context variables for string formatting
         current_season = self.get_current_season()
         current_time = datetime.now().strftime("%A, %I:%M %p")
-        
+
         context = {
             "origin": origin_coords["formatted_address"] if origin_coords else None,
             "destination": dest_coords["formatted_address"],
@@ -743,36 +760,48 @@ class ActivityRecommendationAgent:
 
         # Prepare string formatting variables to avoid undefined variable issues
         place_type_text = f" focusing on {place_type} options" if place_type else ""
-        origin_text = f"from {context['origin']}" if context['origin'] else ""
-        origin_details = f"- Origin: {context['origin']}" if context['origin'] else "- No specific origin provided"
-        weather_info = json.dumps(context['weather'], indent=2) if weather else "Weather information unavailable"
-        places_info = json.dumps(transit_accessible_places, indent=2) if transit_accessible_places else "No places with public transit access found"
-        
+        origin_text = f"from {context['origin']}" if context["origin"] else ""
+        origin_details = (
+            f"- Origin: {context['origin']}"
+            if context["origin"]
+            else "- No specific origin provided"
+        )
+        weather_info = (
+            json.dumps(context["weather"], indent=2)
+            if weather
+            else "Weather information unavailable"
+        )
+        places_info = (
+            json.dumps(transit_accessible_places, indent=2)
+            if transit_accessible_places
+            else "No places with public transit access found"
+        )
+
         # Format a prompt for Mistral
         user_prompt = f"""
-        I need recommendations for activities near {destination_location}{place_type_text} that are accessible by public transit {origin_text}.
-        
-        Location details:
-        {origin_details}
-        - Destination area: {context['destination']}
-        - Current time: {context['current_time']}
-        - Season: {context['season']}
-        
-        Weather information:
-        {weather_info}
-        
-        Places accessible by public transit:
-        {places_info}
-        
-        Consider the conversation history when making recommendations. The user might have mentioned preferences or constraints in previous messages.
-        
-        Please prioritize recommendations that are 30-60 minutes away by public transit, as these offer a good balance of accessibility and exploration.
-        
-        Please provide {len(transit_accessible_places)} specific recommendations based on this data. Make sure to mention ALL of the places in the "Places accessible by public transit" list above.
-        
-        If no transit-accessible places were found, suggest popular activities in the area that might have public transit access not listed in the data.
-        """
-                
+       I need recommendations for activities near {destination_location}{place_type_text} that are accessible by public transit {origin_text}.
+      
+       Location details:
+       {origin_details}
+       - Destination area: {context['destination']}
+       - Current time: {context['current_time']}
+       - Season: {context['season']}
+      
+       Weather information:
+       {weather_info}
+      
+       Places accessible by public transit:
+       {places_info}
+      
+       Consider the conversation history when making recommendations. The user might have mentioned preferences or constraints in previous messages.
+      
+       Please prioritize recommendations that are 30-60 minutes away by public transit, as these offer a good balance of accessibility and exploration.
+      
+       Please provide {len(transit_accessible_places)} specific recommendations based on this data. Make sure to mention ALL of the places in the "Places accessible by public transit" list above.
+      
+       If no transit-accessible places were found, suggest popular activities in the area that might have public transit access not listed in the data.
+       """
+
         # Get all conversation history for context
         conversation_history = self.conversation_manager.get_history(user_id)
 
@@ -807,10 +836,10 @@ class ActivityRecommendationAgent:
 
             # Store the bot's response in conversation history
             self.conversation_manager.add_message(user_id, "assistant", final_response)
-            
+
             # Store recommendations for this user to retrieve when buttons are clicked
             self.last_recommendations[str(user_id)] = transit_accessible_places
-            
+
             # Create a view with bookmark buttons for each recommendation
             view = None
             if transit_accessible_places:
@@ -838,7 +867,7 @@ class ActivityRecommendationAgent:
             return "Summer"
         else:
             return "Fall"
-    
+
     def get_place_by_name(self, user_id, place_name):
         """Get place details by name from user's last recommendations."""
         user_id = str(user_id)
