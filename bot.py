@@ -143,11 +143,6 @@ async def on_interaction(interaction):
                     ephemeral=True,
                 )
 
-        # No changes needed for delete_bookmark functionality
-        elif custom_id.startswith("delete_bookmark_"):
-            # ... rest of the handler remains the same
-            pass
-
         elif custom_id.startswith("delete_bookmark_"):
             # Extract bookmark ID from custom_id
             bookmark_id = custom_id[16:]  # Remove "delete_bookmark_" prefix
