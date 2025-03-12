@@ -659,18 +659,33 @@ class ActivityRecommendationAgent:
 
         # If we don't have any location at all, ask for origin first
         if not origin_location and not destination_location:
-            response = "To help you find activities accessible by public transit, I need to know your starting location. Where will you be traveling from?"
-            self.conversation_manager.add_message(user_id, "assistant", response)
-            return response, None
+            # Get the conversation history
+            conversation_history = self.conversation_manager.get_history(user_id)
+
+            # Prepare messages for Mistral including history
+            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+            # Add relevant conversation history (skipping the latest user message which we'll add separately)
+            for msg in conversation_history[:-1]:
+                messages.append(msg)
+
+            # Add the latest user message
+            messages.append({"role": "user", "content": content})
+
+            response = await self.mistral_client.chat.complete_async(
+                model=MISTRAL_MODEL,
+                messages=messages,
+            )
+
+            mistral_response = response.choices[0].message.content
+            self.conversation_manager.add_message(
+                user_id, "assistant", mistral_response
+            )
+            return mistral_response, None  # No view since there are no recommendations
 
         # If we have an origin but no destination, use the origin as the destination area to explore
         if origin_location and not destination_location:
             destination_location = origin_location
-
-        if not origin_location and destination_location:
-            response = "To help you find activities accessible by public transit, I need to know your starting location. Where will you be traveling from?"
-            self.conversation_manager.add_message(user_id, "assistant", response)
-            return response, None
 
         # Get coordinates for both locations
         origin_coords = None
